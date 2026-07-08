@@ -45,11 +45,11 @@ pub struct BenchmarkRunner {
 impl BenchmarkRunner {
     pub fn new(config: BenchmarkConfig) -> Result<Self> {
         let workload_type = match config.workload.as_str() {
-            "founders" => WorkloadType::Founders,
-            "engineers" => WorkloadType::Engineers,
-            "designers" => WorkloadType::Designers,
-            "customers" => WorkloadType::Customers,
-            "investors" => WorkloadType::Investors,
+            "strategic" => WorkloadType::Strategic,
+            "technical" => WorkloadType::Technical,
+            "creative" => WorkloadType::Creative,
+            "episodic" => WorkloadType::Episodic,
+            "analytical" => WorkloadType::Analytical,
             _ => return Err(anyhow::anyhow!("Unknown workload type: {}", config.workload)),
         };
 

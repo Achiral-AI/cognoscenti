@@ -38,7 +38,7 @@ Or customize the benchmark parameters:
 
 ```bash
 cargo run --release -- \
-  --workload engineers \
+  --workload technical \
   --duration-months 6 \
   --retrieval-count 1000 \
   --output-dir ./results \
@@ -47,11 +47,13 @@ cargo run --release -- \
 
 ### Available Workloads
 
-- `founders`: Strategic planning and high-level decision making
-- `engineers`: Product development, bug reports, and technical discussions
-- `designers`: Product design, user research, and UI/UX work
-- `customers`: Customer support and feedback
-- `investors`: Fundraising and financial discussions
+Each workload generates synthetic data patterns to test specific cognitive memory properties:
+
+- `strategic`: High-level decision patterns with infrequent but high-importance memories (tests selective forgetting and activation precision)
+- `technical`: Frequent repetitive interactions with evolving technical context (tests memory consolidation and adaptation)
+- `creative`: Varied contextual patterns with cross-domain references (tests contextual recall and interference resistance)
+- `episodic`: Short-lived interaction patterns requiring rapid forgetting (tests decay rates and junk activation)
+- `analytical`: Precision-focused patterns with strict accuracy requirements (tests retrieval efficiency and top-k accuracy)
 
 ### Output
 

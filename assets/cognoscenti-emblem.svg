@@ -1,60 +1,96 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">Cognoscenti emblem</title>
-  <desc id="desc">A classical circular seal with a selective recall network: one activated memory comes forward from quieter surrounding memories.</desc>
+  <desc id="desc">A jewel-toned rainbow and gold aristocratic seal for Cognoscenti, combining a classical laurel medallion with a selective recall constellation.</desc>
   <defs>
-    <radialGradient id="seal-glow" cx="50%" cy="43%" r="62%">
-      <stop offset="0" stop-color="#f6f0e6"/>
-      <stop offset="0.62" stop-color="#d8c7a1"/>
-      <stop offset="1" stop-color="#95783c"/>
+    <radialGradient id="velvet" cx="50%" cy="45%" r="68%">
+      <stop offset="0" stop-color="#3a0f36"/>
+      <stop offset="0.54" stop-color="#130a2a"/>
+      <stop offset="1" stop-color="#070812"/>
     </radialGradient>
-    <linearGradient id="ink" x1="120" y1="92" x2="392" y2="420" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#233b37"/>
-      <stop offset="1" stop-color="#0d1716"/>
+    <radialGradient id="pearl" cx="42%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#fff9e8"/>
+      <stop offset="0.42" stop-color="#f4d58f"/>
+      <stop offset="1" stop-color="#925f21"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="86" y1="55" x2="434" y2="457" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a8"/>
+      <stop offset="0.24" stop-color="#f4c75f"/>
+      <stop offset="0.52" stop-color="#a66a1d"/>
+      <stop offset="0.78" stop-color="#f6d674"/>
+      <stop offset="1" stop-color="#6f3f12"/>
     </linearGradient>
-    <linearGradient id="aureate" x1="132" y1="88" x2="374" y2="434" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f0d58a"/>
-      <stop offset="0.48" stop-color="#b78738"/>
-      <stop offset="1" stop-color="#74521f"/>
+    <linearGradient id="rainbow" x1="96" y1="111" x2="415" y2="402" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff3864"/>
+      <stop offset="0.16" stop-color="#ff8a1d"/>
+      <stop offset="0.32" stop-color="#ffd84a"/>
+      <stop offset="0.49" stop-color="#38d66b"/>
+      <stop offset="0.66" stop-color="#22c7e8"/>
+      <stop offset="0.82" stop-color="#5a6cff"/>
+      <stop offset="1" stop-color="#d243ff"/>
     </linearGradient>
-    <filter id="soft-shadow" x="-18%" y="-18%" width="136%" height="136%">
-      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#06100f" flood-opacity="0.22"/>
+    <linearGradient id="memory-line" x1="143" y1="257" x2="379" y2="211" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff0a8"/>
+      <stop offset="0.28" stop-color="#ff3864"/>
+      <stop offset="0.55" stop-color="#22c7e8"/>
+      <stop offset="1" stop-color="#d243ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#05030a" flood-opacity="0.42"/>
     </filter>
+    <filter id="inner-glow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#fff0a8" flood-opacity="0.34"/>
+    </filter>
+    <path id="leaf" d="M0 0c19-15 40-16 58-1-17 15-38 16-58 1z"/>
   </defs>
 
-  <circle cx="256" cy="256" r="224" fill="url(#ink)"/>
-  <circle cx="256" cy="256" r="207" fill="none" stroke="url(#aureate)" stroke-width="14"/>
-  <circle cx="256" cy="256" r="181" fill="url(#seal-glow)" filter="url(#soft-shadow)"/>
-  <circle cx="256" cy="256" r="163" fill="none" stroke="#233b37" stroke-opacity="0.18" stroke-width="2"/>
+  <circle cx="256" cy="256" r="238" fill="#070812"/>
+  <circle cx="256" cy="256" r="222" fill="url(#gold)" filter="url(#shadow)"/>
+  <circle cx="256" cy="256" r="205" fill="#140720"/>
+  <circle cx="256" cy="256" r="191" fill="none" stroke="url(#rainbow)" stroke-width="18"/>
+  <circle cx="256" cy="256" r="167" fill="url(#velvet)" stroke="url(#gold)" stroke-width="8"/>
 
-  <path d="M349 111c-55-25-121-14-164 29-63 63-63 166 0 229 43 43 109 54 164 29"
-        fill="none" stroke="#142321" stroke-width="44" stroke-linecap="round"/>
-  <path d="M353 135c-43-18-95-8-129 26-50 50-50 131 0 181 34 34 86 44 129 26"
-        fill="none" stroke="#f8efe0" stroke-width="16" stroke-linecap="round" opacity="0.92"/>
+  <g opacity="0.88" fill="#f0cf6b" stroke="#7c4b16" stroke-width="2">
+    <ellipse cx="119" cy="330" rx="9" ry="25" transform="rotate(-32 119 330)"/>
+    <ellipse cx="133" cy="363" rx="9" ry="25" transform="rotate(-45 133 363)"/>
+    <ellipse cx="155" cy="391" rx="9" ry="25" transform="rotate(-58 155 391)"/>
+    <ellipse cx="184" cy="411" rx="8" ry="22" transform="rotate(-70 184 411)"/>
+    <ellipse cx="393" cy="330" rx="9" ry="25" transform="rotate(32 393 330)"/>
+    <ellipse cx="379" cy="363" rx="9" ry="25" transform="rotate(45 379 363)"/>
+    <ellipse cx="357" cy="391" rx="9" ry="25" transform="rotate(58 357 391)"/>
+    <ellipse cx="328" cy="411" rx="8" ry="22" transform="rotate(70 328 411)"/>
+  </g>
+
+  <path d="M348 116c-62-30-138-17-187 32-60 60-66 155-17 222 49 66 142 90 219 54"
+        fill="none" stroke="#060912" stroke-width="54" stroke-linecap="round"/>
+  <path d="M352 139c-49-22-110-10-150 30-49 49-55 126-14 182 40 55 118 75 181 46"
+        fill="none" stroke="url(#rainbow)" stroke-width="28" stroke-linecap="round" filter="url(#inner-glow)"/>
+  <path d="M356 150c-46-19-101-8-137 28-44 44-49 112-13 162 36 48 104 66 160 40"
+        fill="none" stroke="#fff9e8" stroke-width="9" stroke-linecap="round" opacity="0.72"/>
 
   <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M176 257c37-34 78-49 125-44" stroke="#1f6f68" stroke-width="11"/>
-    <path d="M177 257c39 29 81 41 126 34" stroke="#6f7c75" stroke-width="8" opacity="0.55"/>
-    <path d="M204 177c24 18 46 30 82 36" stroke="#6f7c75" stroke-width="7" opacity="0.42"/>
-    <path d="M207 337c28-20 51-35 91-46" stroke="#6f7c75" stroke-width="7" opacity="0.42"/>
+    <path d="M146 258c50-50 110-69 182-57" stroke="url(#memory-line)" stroke-width="16"/>
+    <path d="M146 258c54 35 111 49 181 32" stroke="#b0a2bd" stroke-width="9" opacity="0.42"/>
+    <path d="M181 170c38 28 72 42 128 36" stroke="#b0a2bd" stroke-width="8" opacity="0.34"/>
+    <path d="M184 341c43-30 78-47 138-52" stroke="#b0a2bd" stroke-width="8" opacity="0.34"/>
   </g>
 
   <g>
-    <circle cx="170" cy="257" r="20" fill="#142321"/>
-    <circle cx="170" cy="257" r="9" fill="#f0d58a"/>
-    <circle cx="204" cy="177" r="14" fill="#30423d" opacity="0.62"/>
-    <circle cx="207" cy="337" r="14" fill="#30423d" opacity="0.62"/>
-    <circle cx="303" cy="291" r="15" fill="#30423d" opacity="0.52"/>
-    <circle cx="304" cy="213" r="17" fill="#1f6f68"/>
-    <circle cx="304" cy="213" r="8" fill="#f8efe0"/>
+    <circle cx="143" cy="258" r="30" fill="#080a13" stroke="url(#gold)" stroke-width="8"/>
+    <circle cx="143" cy="258" r="12" fill="#fff0a8"/>
+    <circle cx="183" cy="170" r="18" fill="#ff3864" opacity="0.86"/>
+    <circle cx="184" cy="341" r="18" fill="#38d66b" opacity="0.82"/>
+    <circle cx="323" cy="290" r="20" fill="#22c7e8" opacity="0.78"/>
+    <circle cx="329" cy="201" r="24" fill="#080a13" stroke="#d243ff" stroke-width="8"/>
+    <circle cx="329" cy="201" r="10" fill="#fff9e8"/>
   </g>
 
-  <path d="M366 203c-20-28-61-36-91-18" fill="none" stroke="#142321" stroke-width="14" stroke-linecap="round"/>
-  <path d="M364 309c-21 28-62 35-91 17" fill="none" stroke="#142321" stroke-width="14" stroke-linecap="round"/>
+  <path d="M353 186c22 7 40 21 52 42" fill="none" stroke="url(#gold)" stroke-width="11" stroke-linecap="round"/>
+  <path d="M353 326c22-7 40-21 52-42" fill="none" stroke="url(#gold)" stroke-width="11" stroke-linecap="round"/>
 
-  <g fill="url(#aureate)">
-    <circle cx="256" cy="75" r="5"/>
-    <circle cx="256" cy="437" r="5"/>
-    <circle cx="75" cy="256" r="5"/>
-    <circle cx="437" cy="256" r="5"/>
+  <g fill="url(#pearl)" stroke="#5d3310" stroke-width="2">
+    <path d="M256 52l13 27 30 4-22 21 5 30-26-14-26 14 5-30-22-21 30-4z"/>
+    <path d="M256 459l8 17 19 3-14 13 3 19-16-9-16 9 3-19-14-13 19-3z"/>
+    <path d="M53 256l17-8 3-19 13 14 19-3-9 16 9 16-19-3-13 14-3-19z"/>
+    <path d="M459 256l-17-8-3-19-13 14-19-3 9 16-9 16 19-3 13 14 3-19z"/>
   </g>
 </svg>

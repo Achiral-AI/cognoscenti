@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 /// Types of workloads to simulate
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WorkloadType {
-    Founders,
-    Engineers,
-    Designers,
-    Customers,
-    Investors,
+    Strategic,
+    Technical,
+    Creative,
+    Episodic,
+    Analytical,
 }
 
 /// A single event in the simulation
@@ -60,11 +60,11 @@ impl Workload {
         let end_date = Utc::now();
         
         let events_per_day = match self.workload_type {
-            WorkloadType::Founders => 5,
-            WorkloadType::Engineers => 15,
-            WorkloadType::Designers => 8,
-            WorkloadType::Customers => 3,
-            WorkloadType::Investors => 2,
+            WorkloadType::Strategic => 5,
+            WorkloadType::Technical => 15,
+            WorkloadType::Creative => 8,
+            WorkloadType::Episodic => 3,
+            WorkloadType::Analytical => 2,
         };
 
         let mut current_date = start_date;
@@ -90,11 +90,11 @@ impl Workload {
         let timestamp = date + Duration::hours(hour);
         
         let (event_type, context, content) = match self.workload_type {
-            WorkloadType::Founders => self.generate_founders_event(rng),
-            WorkloadType::Engineers => self.generate_engineers_event(rng),
-            WorkloadType::Designers => self.generate_designers_event(rng),
-            WorkloadType::Customers => self.generate_customers_event(rng),
-            WorkloadType::Investors => self.generate_investors_event(rng),
+            WorkloadType::Strategic => self.generate_strategic_event(rng),
+            WorkloadType::Technical => self.generate_technical_event(rng),
+            WorkloadType::Creative => self.generate_creative_event(rng),
+            WorkloadType::Episodic => self.generate_episodic_event(rng),
+            WorkloadType::Analytical => self.generate_analytical_event(rng),
         };
 
         let participants = self.generate_participants(&self.workload_type, rng);
@@ -108,7 +108,7 @@ impl Workload {
         })
     }
 
-    fn generate_founders_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
+    fn generate_strategic_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
         let events = [
             EventType::Meeting,
             EventType::Decision,
@@ -117,10 +117,10 @@ impl Workload {
         let event_type = events[rng.gen_range(0..events.len())];
         
         let context = Context {
-            project: Some("Strategic Planning".to_string()),
+            project: Some("High-Level Decisions".to_string()),
             domain: Domain::General,
-            conversation_id: Some(format!("conv-{}", rng.gen::<u32>())),
-            participants: vec!["CEO".to_string(), "CTO".to_string()],
+            conversation_id: Some(format!("decision-{}", rng.gen::<u32>())),
+            participants: vec!["decision-maker".to_string()],
         };
 
         let contents = vec![
@@ -135,7 +135,7 @@ impl Workload {
         (event_type, context, content)
     }
 
-    fn generate_engineers_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
+    fn generate_technical_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
         let events = [
             EventType::Meeting,
             EventType::Chat,
@@ -145,10 +145,10 @@ impl Workload {
         let event_type = events[rng.gen_range(0..events.len())];
         
         let context = Context {
-            project: Some("Product Development".to_string()),
+            project: Some("Technical Evolution".to_string()),
             domain: Domain::Engineering,
-            conversation_id: Some(format!("eng-{}", rng.gen::<u32>())),
-            participants: vec!["Engineer".to_string()],
+            conversation_id: Some(format!("tech-{}", rng.gen::<u32>())),
+            participants: vec!["technical-agent".to_string()],
         };
 
         let contents = vec![
@@ -163,7 +163,7 @@ impl Workload {
         (event_type, context, content)
     }
 
-    fn generate_designers_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
+    fn generate_creative_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
         let events = [
             EventType::Meeting,
             EventType::DocumentCreation,
@@ -172,10 +172,10 @@ impl Workload {
         let event_type = events[rng.gen_range(0..events.len())];
         
         let context = Context {
-            project: Some("Product Design".to_string()),
+            project: Some("Cross-Domain Patterns".to_string()),
             domain: Domain::Design,
-            conversation_id: Some(format!("design-{}", rng.gen::<u32>())),
-            participants: vec!["Designer".to_string()],
+            conversation_id: Some(format!("creative-{}", rng.gen::<u32>())),
+            participants: vec!["creative-agent".to_string()],
         };
 
         let contents = vec![
@@ -190,7 +190,7 @@ impl Workload {
         (event_type, context, content)
     }
 
-    fn generate_customers_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
+    fn generate_episodic_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
         let events = [
             EventType::Chat,
             EventType::Meeting,
@@ -198,10 +198,10 @@ impl Workload {
         let event_type = events[rng.gen_range(0..events.len())];
         
         let context = Context {
-            project: Some("Customer Support".to_string()),
+            project: Some("Short-Term Interactions".to_string()),
             domain: Domain::General,
-            conversation_id: Some(format!("cust-{}", rng.gen::<u32>())),
-            participants: vec!["Customer".to_string()],
+            conversation_id: Some(format!("episodic-{}", rng.gen::<u32>())),
+            participants: vec!["episodic-agent".to_string()],
         };
 
         let contents = vec![
@@ -216,7 +216,7 @@ impl Workload {
         (event_type, context, content)
     }
 
-    fn generate_investors_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
+    fn generate_analytical_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
         let events = [
             EventType::Meeting,
             EventType::Decision,
@@ -224,10 +224,10 @@ impl Workload {
         let event_type = events[rng.gen_range(0..events.len())];
         
         let context = Context {
-            project: Some("Fundraising".to_string()),
+            project: Some("Precision Analysis".to_string()),
             domain: Domain::Finance,
-            conversation_id: Some(format!("investor-{}", rng.gen::<u32>())),
-            participants: vec!["Investor".to_string()],
+            conversation_id: Some(format!("analytical-{}", rng.gen::<u32>())),
+            participants: vec!["analytical-agent".to_string()],
         };
 
         let contents = vec![
@@ -244,11 +244,11 @@ impl Workload {
 
     fn generate_participants(&self, workload_type: &WorkloadType, rng: &mut impl Rng) -> Vec<String> {
         match workload_type {
-            WorkloadType::Founders => vec!["CEO".to_string(), "CTO".to_string()],
-            WorkloadType::Engineers => (0..rng.gen_range(1..4)).map(|_| format!("Engineer-{}", rng.gen::<u32>())).collect(),
-            WorkloadType::Designers => (0..rng.gen_range(1..3)).map(|_| format!("Designer-{}", rng.gen::<u32>())).collect(),
-            WorkloadType::Customers => vec!["Customer".to_string()],
-            WorkloadType::Investors => vec!["Investor".to_string()],
+            WorkloadType::Strategic => vec!["decision-maker".to_string()],
+            WorkloadType::Technical => (0..rng.gen_range(1..4)).map(|_| format!("tech-agent-{}", rng.gen::<u32>())).collect(),
+            WorkloadType::Creative => (0..rng.gen_range(1..3)).map(|_| format!("creative-agent-{}", rng.gen::<u32>())).collect(),
+            WorkloadType::Episodic => vec!["episodic-agent".to_string()],
+            WorkloadType::Analytical => vec!["analytical-agent".to_string()],
         }
     }
 
