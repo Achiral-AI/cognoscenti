@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Cognoscenti emblem</title>
+  <desc id="desc">A classical circular seal with a selective recall network: one activated memory comes forward from quieter surrounding memories.</desc>
+  <defs>
+    <radialGradient id="seal-glow" cx="50%" cy="43%" r="62%">
+      <stop offset="0" stop-color="#f6f0e6"/>
+      <stop offset="0.62" stop-color="#d8c7a1"/>
+      <stop offset="1" stop-color="#95783c"/>
+    </radialGradient>
+    <linearGradient id="ink" x1="120" y1="92" x2="392" y2="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#233b37"/>
+      <stop offset="1" stop-color="#0d1716"/>
+    </linearGradient>
+    <linearGradient id="aureate" x1="132" y1="88" x2="374" y2="434" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f0d58a"/>
+      <stop offset="0.48" stop-color="#b78738"/>
+      <stop offset="1" stop-color="#74521f"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#06100f" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <circle cx="256" cy="256" r="224" fill="url(#ink)"/>
+  <circle cx="256" cy="256" r="207" fill="none" stroke="url(#aureate)" stroke-width="14"/>
+  <circle cx="256" cy="256" r="181" fill="url(#seal-glow)" filter="url(#soft-shadow)"/>
+  <circle cx="256" cy="256" r="163" fill="none" stroke="#233b37" stroke-opacity="0.18" stroke-width="2"/>
+
+  <path d="M349 111c-55-25-121-14-164 29-63 63-63 166 0 229 43 43 109 54 164 29"
+        fill="none" stroke="#142321" stroke-width="44" stroke-linecap="round"/>
+  <path d="M353 135c-43-18-95-8-129 26-50 50-50 131 0 181 34 34 86 44 129 26"
+        fill="none" stroke="#f8efe0" stroke-width="16" stroke-linecap="round" opacity="0.92"/>
+
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M176 257c37-34 78-49 125-44" stroke="#1f6f68" stroke-width="11"/>
+    <path d="M177 257c39 29 81 41 126 34" stroke="#6f7c75" stroke-width="8" opacity="0.55"/>
+    <path d="M204 177c24 18 46 30 82 36" stroke="#6f7c75" stroke-width="7" opacity="0.42"/>
+    <path d="M207 337c28-20 51-35 91-46" stroke="#6f7c75" stroke-width="7" opacity="0.42"/>
+  </g>
+
+  <g>
+    <circle cx="170" cy="257" r="20" fill="#142321"/>
+    <circle cx="170" cy="257" r="9" fill="#f0d58a"/>
+    <circle cx="204" cy="177" r="14" fill="#30423d" opacity="0.62"/>
+    <circle cx="207" cy="337" r="14" fill="#30423d" opacity="0.62"/>
+    <circle cx="303" cy="291" r="15" fill="#30423d" opacity="0.52"/>
+    <circle cx="304" cy="213" r="17" fill="#1f6f68"/>
+    <circle cx="304" cy="213" r="8" fill="#f8efe0"/>
+  </g>
+
+  <path d="M366 203c-20-28-61-36-91-18" fill="none" stroke="#142321" stroke-width="14" stroke-linecap="round"/>
+  <path d="M364 309c-21 28-62 35-91 17" fill="none" stroke="#142321" stroke-width="14" stroke-linecap="round"/>
+
+  <g fill="url(#aureate)">
+    <circle cx="256" cy="75" r="5"/>
+    <circle cx="256" cy="437" r="5"/>
+    <circle cx="75" cy="256" r="5"/>
+    <circle cx="437" cy="256" r="5"/>
+  </g>
+</svg>
