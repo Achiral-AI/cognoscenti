@@ -1,7 +1,7 @@
 # Cognoscenti
 
 <p align="center">
-  <img src="./assets/cognoscenti-emblem.svg" alt="Cognoscenti emblem" width="180">
+  <img src="./assets/cognoscenti-emblem.svg" alt="Cognoscenti C mark" width="160">
 </p>
 
 **Cognoscenti** is a benchmarking tool for **cognitive memory systems** or [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
