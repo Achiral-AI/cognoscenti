@@ -21,6 +21,18 @@
 
 **Cognoscenti** is a benchmarking tool for **cognitive memory systems** or [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
 
+> The problem isn't how much is remembered, but what gets chosen as memory.
+
+---
+
+## 💎 Sponsor Cognoscenti
+
+Support the development of cognitive memory benchmarks and help shape the future of AI memory systems. [Become a sponsor](SPONSORSHIP.md) and gain visibility among thousands of AI/ML developers building the next generation of memory architectures.
+
+[📢 View Sponsorship Tiers](SPONSORSHIP.md) | [🤝 GitHub Sponsors](https://github.com/Achiral-AI) | [💬 Contact Us](mailto:sponsorships@achiral.ai)
+
+---
+
 ## Implementation
 
 Cognoscenti is implemented in Rust and provides a comprehensive framework for benchmarking cognitive memory architectures. The implementation includes:
@@ -81,6 +93,8 @@ The benchmark generates:
 ## Contributing
 
 We welcome contributions from the community! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to Cognoscenti.
+
+For detailed developer documentation, API reference, and architecture guides, see [DEVELOPERS.md](DEVELOPERS.md).
 
 By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 

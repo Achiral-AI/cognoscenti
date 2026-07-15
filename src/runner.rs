@@ -7,12 +7,11 @@ use chrono::Utc;
 use clap::Parser;
 use serde_json;
 use std::fs;
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::time::Instant;
-use lopdf::dictionary;
-use lopdf::Document;
-use lopdf::Object;
-use lopdf::Stream;
+use printpdf::*;
 
 /// Configuration for running benchmarks
 #[derive(Debug, Clone, Parser)]
@@ -313,36 +312,24 @@ impl BenchmarkRunner {
         let output_path = PathBuf::from(&self.config.output_dir);
         let pdf_path = output_path.join("benchmark_report.pdf");
 
-        let mut doc = Document::with_version("1.5");
+        // Create PDF document
+        let (doc, page1, layer1) = PdfDocument::new("Cognoscenti Benchmark Report", Mm(210.0), Mm(297.0), "Layer 1");
+        let current_layer = doc.get_page(page1).get_layer(layer1);
 
-        // Add pages
-        let page_width = 595.28; // A4 width in points
-        let page_height = 841.89; // A4 height in points
+        // Add font
+        let font = doc.add_builtin_font(BuiltinFont::HelveticaBold)?;
 
-        // Page 1: Title and Summary
-        let mut page1 = doc.new_page(page_width, page_height);
+        // Title
+        let title = format!("Cognoscenti Benchmark Report - {} Workload", self.config.workload);
+        current_layer.use_text(&title, 24.0, Mm(20.0), Mm(270.0), &font);
 
-        // Add title
-        let title = "Cognoscenti Benchmark Report";
-        let title_obj = Object::dictionary(dictionary! {
-            "Type" => "Font",
-            "Subtype" => "Type1",
-            "BaseFont" => "Helvetica-Bold",
-        });
-        let title_font_id = doc.add_object(title_obj);
-
-        let title_text = format!("{} - {} Workload", title, self.config.workload);
-        let title_stream = Stream::new(dictionary! {}, title_text.as_bytes().to_vec());
-        let title_text_id = doc.add_object(title_stream);
-
-        // Add timestamp
+        // Timestamp
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
         let timestamp_text = format!("Generated: {}", timestamp);
-        let timestamp_stream = Stream::new(dictionary! {}, timestamp_text.as_bytes().to_vec());
-        let timestamp_id = doc.add_object(timestamp_stream);
+        current_layer.use_text(&timestamp_text, 10.0, Mm(20.0), Mm(260.0), &font);
 
-        // Add metrics sections
-        let content = format!(
+        // Metrics content
+        let metrics_text = format!(
             "=== Benchmark Results ===\n\n\
              Workload: {}\n\
              Duration: {} months\n\
@@ -393,68 +380,20 @@ impl BenchmarkRunner {
             metrics.efficiency.retrieval_latency_p99
         );
 
-        let content_stream = Stream::new(dictionary! {}, content.as_bytes().to_vec());
-        let content_id = doc.add_object(content_stream);
+        let mut y_pos = 240.0;
+        for line in metrics_text.lines() {
+            current_layer.use_text(line, 10.0, Mm(20.0), Mm(y_pos), &font);
+            y_pos -= 5.0;
+        }
 
-        // Add footer with link and statement
+        // Footer
         let footer = "https://achiral.ai | Let's make memories together.";
-        let footer_stream = Stream::new(dictionary! {}, footer.as_bytes().to_vec());
-        let footer_id = doc.add_object(footer_stream);
-
-        // Build page content
-        let page_content = format!(
-            "BT\n\
-             /F1 24 Tf\n\
-             50 800 Td\n\
-             ({}) Tj\n\
-             ET\n\
-             BT\n\
-             /F1 10 Tf\n\
-             50 770 Td\n\
-             ({}) Tj\n\
-             ET\n\
-             BT\n\
-             /F1 12 Tf\n\
-             50 700 Td\n\
-             ({}) Tj\n\
-             ET\n\
-             BT\n\
-             /F1 10 Tf\n\
-             50 50 Td\n\
-             ({}) Tj\n\
-             ET",
-            title_text, timestamp_text, content.replace('\n', ")\n("), footer
-        );
-
-        let page_content_stream = Stream::new(dictionary! {}, page_content.as_bytes().to_vec());
-        let page_content_id = doc.add_object(page_content_stream);
-
-        page1 = page1.insert(b"Contents", page_content_id);
-        page1 = page1.insert(b"Resources", dictionary! {
-            "Font" => dictionary! {
-                "F1" => title_font_id,
-            }
-        });
-
-        let page1_id = doc.add_object(page1);
-
-        // Add page to document
-        let pages_id = doc.add_object(dictionary! {
-            "Type" => "Pages",
-            "Kids" => vec![page1_id.into()],
-            "Count" => 1,
-            "MediaBox" => vec![0.into(), 0.into(), page_width.into(), page_height.into()],
-        });
-
-        let catalog_id = doc.add_object(dictionary! {
-            "Type" => "Catalog",
-            "Pages" => pages_id,
-        });
-
-        doc.trailer.set(b"Root", catalog_id);
+        current_layer.use_text(footer, 10.0, Mm(20.0), Mm(20.0), &font);
 
         // Save PDF
-        doc.save(&pdf_path)?;
+        let file = File::create(&pdf_path)?;
+        let mut writer = BufWriter::new(file);
+        doc.save(&mut writer)?;
         println!("PDF report saved to: {}", pdf_path.display());
 
         Ok(())
