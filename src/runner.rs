@@ -9,6 +9,10 @@ use serde_json;
 use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
+use lopdf::dictionary;
+use lopdf::Document;
+use lopdf::Object;
+use lopdf::Stream;
 
 /// Configuration for running benchmarks
 #[derive(Debug, Clone, Parser)]
@@ -32,6 +36,10 @@ pub struct BenchmarkConfig {
     /// Whether to generate plots
     #[clap(long, default_value = "true")]
     pub generate_plots: bool,
+
+    /// Whether to generate PDF report
+    #[clap(long, default_value = "true")]
+    pub generate_pdf: bool,
 }
 
 /// Main benchmark runner
@@ -93,6 +101,11 @@ impl BenchmarkRunner {
         // Generate plots if requested
         if self.config.generate_plots {
             self.generate_plots(&metrics)?;
+        }
+
+        // Generate PDF report if requested
+        if self.config.generate_pdf {
+            self.generate_pdf_report(&metrics)?;
         }
 
         Ok(metrics)
@@ -292,6 +305,157 @@ impl BenchmarkRunner {
 
         root.present()?;
         println!("Plot saved to: {}", plot_path.display());
+
+        Ok(())
+    }
+
+    fn generate_pdf_report(&self, metrics: &BenchmarkMetrics) -> Result<()> {
+        let output_path = PathBuf::from(&self.config.output_dir);
+        let pdf_path = output_path.join("benchmark_report.pdf");
+
+        let mut doc = Document::with_version("1.5");
+
+        // Add pages
+        let page_width = 595.28; // A4 width in points
+        let page_height = 841.89; // A4 height in points
+
+        // Page 1: Title and Summary
+        let mut page1 = doc.new_page(page_width, page_height);
+
+        // Add title
+        let title = "Cognoscenti Benchmark Report";
+        let title_obj = Object::dictionary(dictionary! {
+            "Type" => "Font",
+            "Subtype" => "Type1",
+            "BaseFont" => "Helvetica-Bold",
+        });
+        let title_font_id = doc.add_object(title_obj);
+
+        let title_text = format!("{} - {} Workload", title, self.config.workload);
+        let title_stream = Stream::new(dictionary! {}, title_text.as_bytes().to_vec());
+        let title_text_id = doc.add_object(title_stream);
+
+        // Add timestamp
+        let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+        let timestamp_text = format!("Generated: {}", timestamp);
+        let timestamp_stream = Stream::new(dictionary! {}, timestamp_text.as_bytes().to_vec());
+        let timestamp_id = doc.add_object(timestamp_stream);
+
+        // Add metrics sections
+        let content = format!(
+            "=== Benchmark Results ===\n\n\
+             Workload: {}\n\
+             Duration: {} months\n\
+             Retrievals: {}\n\n\
+             --- Activation Metrics ---\n\
+             Top-1 Accuracy: {:.2}%\n\
+             Top-3 Accuracy: {:.2}%\n\
+             Avg Retrieval Latency: {:.2}ms\n\n\
+             --- Selective Forgetting ---\n\
+             Junk Activation Rate: {:.2}%\n\
+             Retrieval Precision: {:.2}%\n\n\
+             --- Interference Resistance ---\n\
+             Top-1 Accuracy: {:.2}%\n\
+             Confusion Rate: {:.2}%\n\n\
+             --- Contextual Recall ---\n\
+             Context Switch Success: {:.2}%\n\
+             Cross-Context Interference: {:.2}%\n\n\
+             --- Memory Consolidation ---\n\
+             Retrieval Speed Improvement: {:.2}%\n\
+             Consolidation Rate: {:.2}%\n\n\
+             --- Adaptation ---\n\
+             Outdated Info Superseded: {:.2}%\n\
+             Historical Context Preserved: {:.2}%\n\n\
+             --- Efficiency ---\n\
+             Avg Memories Examined: {:.2}\n\
+             P50 Latency: {:.2}ms\n\
+             P95 Latency: {:.2}ms\n\
+             P99 Latency: {:.2}ms",
+            self.config.workload,
+            self.config.duration_months,
+            self.config.retrieval_count,
+            metrics.activation.top1_accuracy * 100.0,
+            metrics.activation.top3_accuracy * 100.0,
+            metrics.activation.avg_retrieval_latency_ms,
+            metrics.forgetting.junk_activation_rate * 100.0,
+            metrics.forgetting.retrieval_precision * 100.0,
+            metrics.interference.top1_accuracy * 100.0,
+            metrics.interference.confusion_rate * 100.0,
+            metrics.contextual.context_switch_success_rate * 100.0,
+            metrics.contextual.cross_context_interference * 100.0,
+            metrics.consolidation.retrieval_speed_improvement * 100.0,
+            metrics.consolidation.consolidation_rate * 100.0,
+            metrics.adaptation.outdated_info_superseded * 100.0,
+            metrics.adaptation.historical_context_preserved * 100.0,
+            metrics.efficiency.memories_examined_avg,
+            metrics.efficiency.retrieval_latency_p50,
+            metrics.efficiency.retrieval_latency_p95,
+            metrics.efficiency.retrieval_latency_p99
+        );
+
+        let content_stream = Stream::new(dictionary! {}, content.as_bytes().to_vec());
+        let content_id = doc.add_object(content_stream);
+
+        // Add footer with link and statement
+        let footer = "https://achiral.ai | Let's make memories together.";
+        let footer_stream = Stream::new(dictionary! {}, footer.as_bytes().to_vec());
+        let footer_id = doc.add_object(footer_stream);
+
+        // Build page content
+        let page_content = format!(
+            "BT\n\
+             /F1 24 Tf\n\
+             50 800 Td\n\
+             ({}) Tj\n\
+             ET\n\
+             BT\n\
+             /F1 10 Tf\n\
+             50 770 Td\n\
+             ({}) Tj\n\
+             ET\n\
+             BT\n\
+             /F1 12 Tf\n\
+             50 700 Td\n\
+             ({}) Tj\n\
+             ET\n\
+             BT\n\
+             /F1 10 Tf\n\
+             50 50 Td\n\
+             ({}) Tj\n\
+             ET",
+            title_text, timestamp_text, content.replace('\n', ")\n("), footer
+        );
+
+        let page_content_stream = Stream::new(dictionary! {}, page_content.as_bytes().to_vec());
+        let page_content_id = doc.add_object(page_content_stream);
+
+        page1 = page1.insert(b"Contents", page_content_id);
+        page1 = page1.insert(b"Resources", dictionary! {
+            "Font" => dictionary! {
+                "F1" => title_font_id,
+            }
+        });
+
+        let page1_id = doc.add_object(page1);
+
+        // Add page to document
+        let pages_id = doc.add_object(dictionary! {
+            "Type" => "Pages",
+            "Kids" => vec![page1_id.into()],
+            "Count" => 1,
+            "MediaBox" => vec![0.into(), 0.into(), page_width.into(), page_height.into()],
+        });
+
+        let catalog_id = doc.add_object(dictionary! {
+            "Type" => "Catalog",
+            "Pages" => pages_id,
+        });
+
+        doc.trailer.set(b"Root", catalog_id);
+
+        // Save PDF
+        doc.save(&pdf_path)?;
+        println!("PDF report saved to: {}", pdf_path.display());
 
         Ok(())
     }

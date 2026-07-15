@@ -1,1 +1,25 @@
-/target
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+Cargo.lock
+
+# Benchmark results
+/results/
+*.png
+*.csv
+*.json
+!src/**/*.json

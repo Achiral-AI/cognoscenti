@@ -4,6 +4,21 @@
   <img src="./assets/cognoscenti-emblem.svg" alt="Cognoscenti C mark" width="160">
 </p>
 
+<p align="center">
+  <a href="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml">
+    <img src="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml/badge.svg" alt="CI Status">
+  </a>
+  <a href="https://crates.io/crates/cognoscenti">
+    <img src="https://img.shields.io/crates/v/cognoscenti" alt="Crates.io">
+  </a>
+  <a href="https://docs.rs/cognoscenti">
+    <img src="https://docs.rs/cognoscenti/badge.svg" alt="Documentation">
+  </a>
+  <a href="https://github.com/Achiral-AI/cognoscenti/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License">
+  </a>
+</p>
+
 **Cognoscenti** is a benchmarking tool for **cognitive memory systems** or [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
 
 ## Implementation
@@ -215,3 +230,20 @@ architectures such as ACT-R.
 
 Cognoscenti is licensed under the Apache License, Version 2.0. See
 `LICENSE` and `NOTICE`.
+
+## Citation
+
+If you use Cognoscenti in your research, please cite:
+
+```bibtex
+@software{cognoscenti2024,
+  title = {Cognoscenti: A Benchmark for Cognitive Memory Systems},
+  author = {Achiral},
+  year = {2024},
+  url = {https://github.com/Achiral-AI/cognoscenti}
+}
+```
+
+## Acknowledgments
+
+Cognoscenti is inspired by cognitive memory architectures such as ACT-R and aims to complement existing memory benchmarks like LoCoMo by evaluating properties unique to human-like memory systems.

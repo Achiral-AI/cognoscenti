@@ -1,16 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
-  <title id="title">Cognoscenti C mark</title>
-  <desc id="desc">A minimal original blue C-shaped logomark for Cognoscenti.</desc>
-  <defs>
-    <linearGradient id="blue" x1="48" y1="40" x2="196" y2="204" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2d6bff"/>
-      <stop offset="0.5" stop-color="#0057d9"/>
-      <stop offset="1" stop-color="#002f9f"/>
-    </linearGradient>
-  </defs>
-  <path d="M171 48a84 84 0 1 0 0 144"
-        fill="none"
-        stroke="url(#blue)"
-        stroke-width="34"
-        stroke-linecap="round"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg width="100%" height="100%" viewBox="0 0 240 240" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xml:space="preserve" xmlns:serif="http://www.serif.com/" style="fill-rule:evenodd;clip-rule:evenodd;stroke-linecap:round;">
+    <path d="M171,48C157.935,40.149 142.976,36 127.733,36C81.652,36 43.733,73.919 43.733,120C43.733,166.081 81.652,204 127.733,204C142.976,204 157.935,199.851 171,192" style="fill:none;fill-rule:nonzero;stroke:url(#_Linear1);stroke-width:34px;"/>
+    <g transform="matrix(0.853659,0,0,0.853659,34.6585,51.8537)">
+        <circle cx="107" cy="81" r="41" style="fill:rgb(12,92,227);"/>
+    </g>
+    <defs>
+        <linearGradient id="_Linear1" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(148,164,-164,148,48,40)"><stop offset="0" style="stop-color:rgb(45,107,255);stop-opacity:1"/><stop offset="0.5" style="stop-color:rgb(0,87,217);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(0,47,159);stop-opacity:1"/></linearGradient>
+    </defs>
 </svg>
