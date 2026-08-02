@@ -132,6 +132,8 @@ The first public organizational-memory run compares three reference architecture
 
 Run date: 2026-08-02
 
+Public report: [Organizational Memory Benchmark: RAG vs Agent Memory vs Organic Memory](https://achiral.ai/benchmarks/organizational-memory-benchmark)
+
 | System | Top-1 Accuracy | Recall@3 | Precision@3 | Distractor Activation |
 | --- | ---: | ---: | ---: | ---: |
 | RAG reference baseline | 50.00% | 83.33% | 27.78% | 25.00% |
