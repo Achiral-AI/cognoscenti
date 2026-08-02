@@ -1,0 +1,96 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 1005 >>
+stream
+BT
+/F1 18 Tf
+50 790 Td
+(Cognoscenti Memory Eval Report) Tj
+/F1 10 Tf
+0 -24 Td
+(Generated: 2026-08-02 16:13:22 UTC) Tj
+0 -14 Td
+(Items: 12) Tj
+0 -14 Td
+(Top-k: 3) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(System comparison) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(System: rag) Tj
+0 -14 Td
+(Top-1 Accuracy: 50.00%) Tj
+0 -14 Td
+(Recall@k: 83.33%) Tj
+0 -14 Td
+(Precision@k: 27.78%) Tj
+0 -14 Td
+(Distractor Activation: 25.00%) Tj
+0 -14 Td
+(Avg Latency: 0.00ms) Tj
+0 -14 Td
+(Error Rate: 0.00%) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(System: agent-memory) Tj
+0 -14 Td
+(Top-1 Accuracy: 75.00%) Tj
+0 -14 Td
+(Recall@k: 100.00%) Tj
+0 -14 Td
+(Precision@k: 33.33%) Tj
+0 -14 Td
+(Distractor Activation: 38.89%) Tj
+0 -14 Td
+(Avg Latency: 0.00ms) Tj
+0 -14 Td
+(Error Rate: 0.00%) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(System: organic-memory) Tj
+0 -14 Td
+(Top-1 Accuracy: 91.67%) Tj
+0 -14 Td
+(Recall@k: 100.00%) Tj
+0 -14 Td
+(Precision@k: 33.33%) Tj
+0 -14 Td
+(Distractor Activation: 16.67%) Tj
+0 -14 Td
+(Avg Latency: 0.00ms) Tj
+0 -14 Td
+(Error Rate: 0.00%) Tj
+0 -14 Td
+ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000311 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1367
+%%EOF

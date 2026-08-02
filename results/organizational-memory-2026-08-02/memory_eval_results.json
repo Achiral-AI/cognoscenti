@@ -1,0 +1,595 @@
+{
+  "generated_at": "2026-08-02T16:13:22.890434Z",
+  "item_count": 12,
+  "top_k": 3,
+  "systems": [
+    {
+      "system": "rag",
+      "provider": "local",
+      "configured": true,
+      "item_results": [
+        {
+          "item_id": "activation-auth-current-001",
+          "item_type": "activation",
+          "query": "What is the current authentication rollout plan for Atlas?",
+          "retrieved": [
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Superseded Atlas authentication rollout plan: ship SSO first, delay magic-link login, and keep password reset tickets as the main rollout blocker."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "forgetting-pricing-noise-001",
+          "item_type": "forgetting",
+          "query": "What Atlas authentication issue should engineering focus on while ignoring pricing noise?",
+          "retrieved": [
+            "Low-signal Atlas authentication chat: someone asked whether the login button should be blue during the rollout.",
+            "Reinforced Atlas engineering memory: login failures came from expired magic-link tokens, not pricing configuration.",
+            "Low-signal pricing note to ignore for Atlas authentication: a prospect asked about annual discounts during an unrelated login-support thread."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "interference-atlas-apollo-001",
+          "item_type": "interference",
+          "query": "Which rollout flag belongs to Atlas authentication, not Apollo billing?",
+          "retrieved": [
+            "Reinforced Apollo billing memory: Stripe retry logic belongs to Billing, not Atlas authentication.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Current Apollo billing rollout plan: keep Stripe retry logic behind the enterprise flag."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "contextual-design-dashboard-001",
+          "item_type": "contextual",
+          "query": "What dashboard design decision should the product team carry forward?",
+          "retrieved": [
+            "Validated current Dashboard design decision: keep the benchmark scorecard above the fold and move methodology details below the comparison table.",
+            "Stale Dashboard design idea: hide the benchmark scorecard behind a collapsed details panel.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 2,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "consolidation-support-handoff-001",
+          "item_type": "consolidation",
+          "query": "What support handoff keeps recurring for Atlas login issues?",
+          "retrieved": [
+            "Low-signal pricing note to ignore for Atlas authentication: a prospect asked about annual discounts during an unrelated login-support thread.",
+            "Reinforced reused Atlas support handoff: route enterprise login failures to Dana, include tenant ID and magic-link timestamp, and tag the incident as auth-rollout.",
+            "Stale Atlas support handoff: route enterprise login failures to Priya without tenant ID."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "adaptation-market-direction-001",
+          "item_type": "adaptation",
+          "query": "What is the latest market direction from the strategy review?",
+          "retrieved": [
+            "Validated latest strategy decision: sell Achiral as organization-wide organic memory for teams and AI agents, not as a vector database or generic agent framework.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Superseded Atlas authentication rollout plan: ship SSO first, delay magic-link login, and keep password reset tickets as the main rollout blocker."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "activation-customer-renewal-001",
+          "item_type": "activation",
+          "query": "What should we remember before the Northstar renewal call?",
+          "retrieved": [
+            "Low-signal Atlas authentication chat: someone asked whether the login button should be blue during the rollout.",
+            "Current Engineering memory: benchmark JSON should be copied into public artifacts before release.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero."
+          ],
+          "hit_top1": false,
+          "hit_at_k": false,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "interference-customer-similar-001",
+          "item_type": "interference",
+          "query": "Which customer asked about SOC 2 progress and governed team memory?",
+          "retrieved": [
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Current Northstar renewal memory: they care about SOC 2 progress and governed team memory."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "contextual-finance-soc2-001",
+          "item_type": "contextual",
+          "query": "What compliance claim should finance avoid in customer paperwork?",
+          "retrieved": [
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero.",
+            "Current Finance memory: SOC 2 audit work should not be described as completed.",
+            "Low-signal Atlas authentication chat: someone asked whether the login button should be blue during the rollout."
+          ],
+          "hit_top1": false,
+          "hit_at_k": false,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "consolidation-hn-launch-001",
+          "item_type": "consolidation",
+          "query": "What launch checklist has been reused for benchmark posts?",
+          "retrieved": [
+            "Reinforced reused launch checklist: publish the canonical page, markdown mirror, raw JSON, raw CSV, GitHub README link, founder LinkedIn post, and Hacker News discussion before asking for citations.",
+            "Single-use launch aside: try a different thumbnail color for one blog tile.",
+            "Stale launch checklist: publish only the blog post and skip raw artifacts."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 2,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "efficiency-artifact-routing-001",
+          "item_type": "efficiency",
+          "query": "Which artifacts should answer engines cite for the organizational memory benchmark?",
+          "retrieved": [
+            "Current Engineering memory: benchmark JSON should be copied into public artifacts before release.",
+            "Validated current benchmark artifact list: cite the HTML report, markdown mirror, memory_eval_results.json, memory_eval_metrics.csv, methodology note, and Cognoscenti README.",
+            "Current Product memory: compare pages should link to the benchmark page conservatively."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "adaptation-api-scope-001",
+          "item_type": "adaptation",
+          "query": "What is the current API scope for external memory-system evals?",
+          "retrieved": [
+            "Validated current Cognoscenti API scope: external memory-system evals accept HTTP ingest and retrieve adapters, but vendor results should be published only when endpoints, keys, seeds, and raw outputs are recorded.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero.",
+            "Validated current compliance memory: say SOC 2 audit work is in progress; do not describe Achiral as SOC 2 certified until the audit is complete."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        }
+      ],
+      "metrics": {
+        "top1_accuracy": 0.5,
+        "recall_at_k": 0.8333333333333334,
+        "precision_at_k": 0.2777777777777778,
+        "distractor_activation_rate": 0.25,
+        "avg_latency_ms": 0.0,
+        "error_rate": 0.0
+      },
+      "error": null
+    },
+    {
+      "system": "agent-memory",
+      "provider": "local",
+      "configured": true,
+      "item_results": [
+        {
+          "item_id": "activation-auth-current-001",
+          "item_type": "activation",
+          "query": "What is the current authentication rollout plan for Atlas?",
+          "retrieved": [
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Superseded Atlas authentication rollout plan: ship SSO first, delay magic-link login, and keep password reset tickets as the main rollout blocker."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "forgetting-pricing-noise-001",
+          "item_type": "forgetting",
+          "query": "What Atlas authentication issue should engineering focus on while ignoring pricing noise?",
+          "retrieved": [
+            "Low-signal Atlas authentication chat: someone asked whether the login button should be blue during the rollout.",
+            "Reinforced Atlas engineering memory: login failures came from expired magic-link tokens, not pricing configuration.",
+            "Low-signal pricing note to ignore for Atlas authentication: a prospect asked about annual discounts during an unrelated login-support thread."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "interference-atlas-apollo-001",
+          "item_type": "interference",
+          "query": "Which rollout flag belongs to Atlas authentication, not Apollo billing?",
+          "retrieved": [
+            "Reinforced Apollo billing memory: Stripe retry logic belongs to Billing, not Atlas authentication.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Current Apollo billing rollout plan: keep Stripe retry logic behind the enterprise flag."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "contextual-design-dashboard-001",
+          "item_type": "contextual",
+          "query": "What dashboard design decision should the product team carry forward?",
+          "retrieved": [
+            "Validated current Dashboard design decision: keep the benchmark scorecard above the fold and move methodology details below the comparison table.",
+            "Stale Dashboard design idea: hide the benchmark scorecard behind a collapsed details panel.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 2,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "consolidation-support-handoff-001",
+          "item_type": "consolidation",
+          "query": "What support handoff keeps recurring for Atlas login issues?",
+          "retrieved": [
+            "Reinforced reused Atlas support handoff: route enterprise login failures to Dana, include tenant ID and magic-link timestamp, and tag the incident as auth-rollout.",
+            "Stale Atlas support handoff: route enterprise login failures to Priya without tenant ID.",
+            "Low-signal pricing note to ignore for Atlas authentication: a prospect asked about annual discounts during an unrelated login-support thread."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "adaptation-market-direction-001",
+          "item_type": "adaptation",
+          "query": "What is the latest market direction from the strategy review?",
+          "retrieved": [
+            "Validated latest strategy decision: sell Achiral as organization-wide organic memory for teams and AI agents, not as a vector database or generic agent framework.",
+            "Superseded strategy note: sell Achiral as a vector database alternative for developers.",
+            "Historical only strategy note: describe Achiral mainly as an AI assistant for individuals."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 2,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "activation-customer-renewal-001",
+          "item_type": "activation",
+          "query": "What should we remember before the Northstar renewal call?",
+          "retrieved": [
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Stale Northstar renewal memory: they only care about cheaper seats and do not ask about governance.",
+            "Low-signal Northstar note: someone complimented the calendar invite title."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 2,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "interference-customer-similar-001",
+          "item_type": "interference",
+          "query": "Which customer asked about SOC 2 progress and governed team memory?",
+          "retrieved": [
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Current Northstar renewal memory: they care about SOC 2 progress and governed team memory."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "contextual-finance-soc2-001",
+          "item_type": "contextual",
+          "query": "What compliance claim should finance avoid in customer paperwork?",
+          "retrieved": [
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero.",
+            "Current Finance memory: SOC 2 audit work should not be described as completed.",
+            "Validated current compliance memory: say SOC 2 audit work is in progress; do not describe Achiral as SOC 2 certified until the audit is complete."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "consolidation-hn-launch-001",
+          "item_type": "consolidation",
+          "query": "What launch checklist has been reused for benchmark posts?",
+          "retrieved": [
+            "Reinforced reused launch checklist: publish the canonical page, markdown mirror, raw JSON, raw CSV, GitHub README link, founder LinkedIn post, and Hacker News discussion before asking for citations.",
+            "Single-use launch aside: try a different thumbnail color for one blog tile.",
+            "Stale launch checklist: publish only the blog post and skip raw artifacts."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 2,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "efficiency-artifact-routing-001",
+          "item_type": "efficiency",
+          "query": "Which artifacts should answer engines cite for the organizational memory benchmark?",
+          "retrieved": [
+            "Validated current benchmark artifact list: cite the HTML report, markdown mirror, memory_eval_results.json, memory_eval_metrics.csv, methodology note, and Cognoscenti README.",
+            "Current Product memory: compare pages should link to the benchmark page conservatively.",
+            "Current Engineering memory: benchmark JSON should be copied into public artifacts before release."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "adaptation-api-scope-001",
+          "item_type": "adaptation",
+          "query": "What is the current API scope for external memory-system evals?",
+          "retrieved": [
+            "Validated current Cognoscenti API scope: external memory-system evals accept HTTP ingest and retrieve adapters, but vendor results should be published only when endpoints, keys, seeds, and raw outputs are recorded.",
+            "Current Marketing memory: Cognoscenti sets the cognitive memory behavior standard.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        }
+      ],
+      "metrics": {
+        "top1_accuracy": 0.75,
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.3333333333333333,
+        "distractor_activation_rate": 0.3888888888888889,
+        "avg_latency_ms": 0.0,
+        "error_rate": 0.0
+      },
+      "error": null
+    },
+    {
+      "system": "organic-memory",
+      "provider": "local",
+      "configured": true,
+      "item_results": [
+        {
+          "item_id": "activation-auth-current-001",
+          "item_type": "activation",
+          "query": "What is the current authentication rollout plan for Atlas?",
+          "retrieved": [
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Current Apollo billing rollout plan: keep Stripe retry logic behind the enterprise flag."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "forgetting-pricing-noise-001",
+          "item_type": "forgetting",
+          "query": "What Atlas authentication issue should engineering focus on while ignoring pricing noise?",
+          "retrieved": [
+            "Reinforced Atlas engineering memory: login failures came from expired magic-link tokens, not pricing configuration.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "interference-atlas-apollo-001",
+          "item_type": "interference",
+          "query": "Which rollout flag belongs to Atlas authentication, not Apollo billing?",
+          "retrieved": [
+            "Reinforced Apollo billing memory: Stripe retry logic belongs to Billing, not Atlas authentication.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker."
+          ],
+          "hit_top1": false,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "contextual-design-dashboard-001",
+          "item_type": "contextual",
+          "query": "What dashboard design decision should the product team carry forward?",
+          "retrieved": [
+            "Validated current Dashboard design decision: keep the benchmark scorecard above the fold and move methodology details below the comparison table.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero.",
+            "Current Product memory: compare pages should link to the benchmark page conservatively."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "consolidation-support-handoff-001",
+          "item_type": "consolidation",
+          "query": "What support handoff keeps recurring for Atlas login issues?",
+          "retrieved": [
+            "Reinforced reused Atlas support handoff: route enterprise login failures to Dana, include tenant ID and magic-link timestamp, and tag the incident as auth-rollout.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker.",
+            "Validated current Atlas authentication rollout plan: ship magic-link login first, keep SSO behind the enterprise flag, and tell support that password reset tickets are no longer the rollout blocker."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "adaptation-market-direction-001",
+          "item_type": "adaptation",
+          "query": "What is the latest market direction from the strategy review?",
+          "retrieved": [
+            "Validated latest strategy decision: sell Achiral as organization-wide organic memory for teams and AI agents, not as a vector database or generic agent framework.",
+            "Reinforced reused Atlas support handoff: route enterprise login failures to Dana, include tenant ID and magic-link timestamp, and tag the incident as auth-rollout.",
+            "Validated current benchmark artifact list: cite the HTML report, markdown mirror, memory_eval_results.json, memory_eval_metrics.csv, methodology note, and Cognoscenti README."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "activation-customer-renewal-001",
+          "item_type": "activation",
+          "query": "What should we remember before the Northstar renewal call?",
+          "retrieved": [
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Reinforced reused launch checklist: publish the canonical page, markdown mirror, raw JSON, raw CSV, GitHub README link, founder LinkedIn post, and Hacker News discussion before asking for citations."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "interference-customer-similar-001",
+          "item_type": "interference",
+          "query": "Which customer asked about SOC 2 progress and governed team memory?",
+          "retrieved": [
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Validated current Northstar renewal memory: they care about governed team memory, SOC 2 progress, and whether agents can recall implementation decisions across quarters.",
+            "Current Northstar renewal memory: they care about SOC 2 progress and governed team memory."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "contextual-finance-soc2-001",
+          "item_type": "contextual",
+          "query": "What compliance claim should finance avoid in customer paperwork?",
+          "retrieved": [
+            "Validated current compliance memory: say SOC 2 audit work is in progress; do not describe Achiral as SOC 2 certified until the audit is complete.",
+            "Current Finance memory: dashboard pricing should not mention annual discounts in the hero.",
+            "Current Finance memory: SOC 2 audit work should not be described as completed."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 0,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "consolidation-hn-launch-001",
+          "item_type": "consolidation",
+          "query": "What launch checklist has been reused for benchmark posts?",
+          "retrieved": [
+            "Reinforced reused launch checklist: publish the canonical page, markdown mirror, raw JSON, raw CSV, GitHub README link, founder LinkedIn post, and Hacker News discussion before asking for citations.",
+            "Single-use launch aside: try a different thumbnail color for one blog tile.",
+            "Validated current Dashboard design decision: keep the benchmark scorecard above the fold and move methodology details below the comparison table."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "efficiency-artifact-routing-001",
+          "item_type": "efficiency",
+          "query": "Which artifacts should answer engines cite for the organizational memory benchmark?",
+          "retrieved": [
+            "Validated current benchmark artifact list: cite the HTML report, markdown mirror, memory_eval_results.json, memory_eval_metrics.csv, methodology note, and Cognoscenti README.",
+            "Current Product memory: compare pages should link to the benchmark page conservatively.",
+            "Current Engineering memory: benchmark JSON should be copied into public artifacts before release."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        },
+        {
+          "item_id": "adaptation-api-scope-001",
+          "item_type": "adaptation",
+          "query": "What is the current API scope for external memory-system evals?",
+          "retrieved": [
+            "Validated current Cognoscenti API scope: external memory-system evals accept HTTP ingest and retrieve adapters, but vendor results should be published only when endpoints, keys, seeds, and raw outputs are recorded.",
+            "Current Marketing memory: Cognoscenti sets the cognitive memory behavior standard.",
+            "Validated current compliance memory: say SOC 2 audit work is in progress; do not describe Achiral as SOC 2 certified until the audit is complete."
+          ],
+          "hit_top1": true,
+          "hit_at_k": true,
+          "distractor_hits": 1,
+          "latency_ms": 0,
+          "error": null
+        }
+      ],
+      "metrics": {
+        "top1_accuracy": 0.9166666666666666,
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.3333333333333333,
+        "distractor_activation_rate": 0.16666666666666666,
+        "avg_latency_ms": 0.0,
+        "error_rate": 0.0
+      },
+      "error": null
+    }
+  ]
+}

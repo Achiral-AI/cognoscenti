@@ -182,7 +182,19 @@ fn evaluate_system(system_name: &str, items: &[BenchmarkItem], top_k: usize) -> 
 
 fn build_system(system_name: &str) -> Result<Box<dyn CognitiveMemorySystem>> {
     match system_name {
-        "local" | "baseline" => Ok(Box::new(LocalMemorySystem::new("local"))),
+        "local" | "baseline" => Ok(Box::new(LocalMemorySystem::new(
+            "local",
+            ScoringMode::Local,
+        ))),
+        "rag" | "vanilla-rag" => Ok(Box::new(LocalMemorySystem::new("rag", ScoringMode::Rag))),
+        "agent" | "agent-memory" => Ok(Box::new(LocalMemorySystem::new(
+            "agent-memory",
+            ScoringMode::AgentMemory,
+        ))),
+        "organic" | "organic-memory" | "achiral" => Ok(Box::new(LocalMemorySystem::new(
+            "organic-memory",
+            ScoringMode::OrganicMemory,
+        ))),
         "mem0" | "supermemory" | "zep" | "letta" => {
             Ok(Box::new(HttpMemorySystem::from_env(system_name)?))
         }
@@ -464,13 +476,23 @@ fn memory_eval_report_lines(report: &MemoryEvalReport) -> Vec<String> {
 
 struct LocalMemorySystem {
     name: String,
+    scoring_mode: ScoringMode,
     memories: Vec<MemoryChunk>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ScoringMode {
+    Local,
+    Rag,
+    AgentMemory,
+    OrganicMemory,
+}
+
 impl LocalMemorySystem {
-    fn new(name: &str) -> Self {
+    fn new(name: &str, scoring_mode: ScoringMode) -> Self {
         Self {
             name: name.to_string(),
+            scoring_mode,
             memories: Vec::new(),
         }
     }
@@ -496,7 +518,12 @@ impl CognitiveMemorySystem for LocalMemorySystem {
             .memories
             .iter()
             .cloned()
-            .map(|chunk| (score_memory(&item.query, &item.context, &chunk), chunk))
+            .map(|chunk| {
+                (
+                    score_memory(&item.query, &item.context, &chunk, self.scoring_mode),
+                    chunk,
+                )
+            })
             .collect();
         scored.sort_by(|(left, _), (right, _)| {
             right.partial_cmp(left).unwrap_or(std::cmp::Ordering::Equal)
@@ -509,7 +536,9 @@ impl CognitiveMemorySystem for LocalMemorySystem {
             .collect();
         let confidence_scores = retrieved_chunks
             .iter()
-            .map(|chunk| score_memory(&item.query, &item.context, chunk).min(1.0))
+            .map(|chunk| {
+                score_memory(&item.query, &item.context, chunk, self.scoring_mode).min(1.0)
+            })
             .collect();
 
         Ok(RetrievalResult {
@@ -635,17 +664,72 @@ fn run_json_post(url: &str, api_key: Option<&str>, payload: &Value) -> Result<Va
     })
 }
 
-fn score_memory(query: &str, context: &Context, chunk: &MemoryChunk) -> f64 {
+fn score_memory(query: &str, context: &Context, chunk: &MemoryChunk, mode: ScoringMode) -> f64 {
     let query_terms = normalized_terms(query);
     let content_terms = normalized_terms(&chunk.content);
     let overlap = query_terms.intersection(&content_terms).count() as f64;
-    let context_bonus = if context.domain == chunk.context.domain {
+    let content = chunk.content.to_ascii_lowercase();
+    let domain_bonus = if context.domain == chunk.context.domain {
         0.25
     } else {
         0.0
     };
+    let project_bonus = if context.project.is_some() && context.project == chunk.context.project {
+        0.2
+    } else {
+        0.0
+    };
+    let conversation_bonus = if context.conversation_id.is_some()
+        && context.conversation_id == chunk.context.conversation_id
+    {
+        0.35
+    } else {
+        0.0
+    };
 
-    overlap + context_bonus + chunk.importance
+    match mode {
+        ScoringMode::Rag => overlap,
+        ScoringMode::Local => overlap + domain_bonus + chunk.importance,
+        ScoringMode::AgentMemory => overlap + domain_bonus + project_bonus + conversation_bonus,
+        ScoringMode::OrganicMemory => {
+            let lifecycle_bonus = lifecycle_signal(&content);
+            overlap + domain_bonus + project_bonus + conversation_bonus + lifecycle_bonus
+        }
+    }
+}
+
+fn lifecycle_signal(content: &str) -> f64 {
+    let mut score = 0.0;
+
+    for marker in [
+        "validated",
+        "current",
+        "reinforced",
+        "approved",
+        "reused",
+        "high-signal",
+        "latest",
+    ] {
+        if content.contains(marker) {
+            score += 0.65;
+        }
+    }
+
+    for marker in [
+        "stale",
+        "superseded",
+        "deprecated",
+        "outdated",
+        "low-signal",
+        "ignore",
+        "historical only",
+    ] {
+        if content.contains(marker) {
+            score -= 0.85;
+        }
+    }
+
+    score
 }
 
 fn normalized_terms(text: &str) -> HashSet<String> {

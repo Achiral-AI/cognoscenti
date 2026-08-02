@@ -122,6 +122,41 @@ The memory-tool eval generates:
 - `memory_eval_metrics.csv`: Comparison-ready metric table
 - `memory_eval_report.pdf`: Printable comparison report
 
+## Published Organizational Memory Run
+
+The first public organizational-memory run compares three reference architectures on the same JSONL workload:
+
+- `rag`: lexical retrieval over stored memories.
+- `agent-memory`: lexical retrieval plus project, domain, and conversation scope.
+- `organic-memory`: scoped retrieval plus lifecycle signals for current, validated, reinforced, stale, superseded, and low-signal memories.
+
+Run date: 2026-08-02
+
+| System | Top-1 Accuracy | Recall@3 | Precision@3 | Distractor Activation |
+| --- | ---: | ---: | ---: | ---: |
+| RAG reference baseline | 50.00% | 83.33% | 27.78% | 25.00% |
+| Agent-memory reference baseline | 75.00% | 100.00% | 33.33% | 38.89% |
+| Organic-memory reference baseline | 91.67% | 100.00% | 33.33% | 16.67% |
+
+Reproduce the run:
+
+```bash
+cargo run --release -- \
+  --items-file examples/organizational_memory.jsonl \
+  --systems rag,agent-memory,organic-memory \
+  --top-k 3 \
+  --output-dir results/organizational-memory-2026-08-02
+```
+
+Artifacts:
+
+- [`examples/organizational_memory.jsonl`](examples/organizational_memory.jsonl)
+- [`results/organizational-memory-2026-08-02/README.md`](results/organizational-memory-2026-08-02/README.md)
+- [`results/organizational-memory-2026-08-02/memory_eval_results.json`](results/organizational-memory-2026-08-02/memory_eval_results.json)
+- [`results/organizational-memory-2026-08-02/memory_eval_metrics.csv`](results/organizational-memory-2026-08-02/memory_eval_metrics.csv)
+
+This run does not claim to benchmark Mem0, Zep, Letta, Glean, LangGraph, or any other vendor product. Vendor adapters exist through Cognoscenti's HTTP eval mode, but vendor results should be published only when endpoints, keys, seeds, commands, and raw outputs are recorded.
+
 ## Contributing
 
 We welcome contributions from the community! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to Cognoscenti.
