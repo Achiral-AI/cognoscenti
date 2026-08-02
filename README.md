@@ -8,9 +8,6 @@
   <a href="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml">
     <img src="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml/badge.svg" alt="CI Status">
   </a>
-  <a href="https://crates.io/crates/cognoscenti">
-    <img src="https://img.shields.io/crates/v/cognoscenti" alt="Crates.io">
-  </a>
   <a href="https://docs.rs/cognoscenti">
     <img src="https://docs.rs/cognoscenti/badge.svg" alt="Documentation">
   </a>

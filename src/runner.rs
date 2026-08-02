@@ -382,33 +382,11 @@ impl BenchmarkRunner {
         let output_path = PathBuf::from(&self.config.output_dir);
         let plot_path = output_path.join("metrics_overview.png");
 
-        let root = BitMapBackend::new(&plot_path, (800, 600)).into_drawing_area();
+        let width = 800;
+        let height = 600;
+        let root = BitMapBackend::new(&plot_path, (width, height)).into_drawing_area();
         root.fill(&WHITE)?;
 
-        let mut chart = ChartBuilder::on(&root)
-            .caption("Cognoscenti Benchmark Metrics", ("sans-serif", 40))
-            .margin(20)
-            .x_label_area_size(60)
-            .y_label_area_size(80)
-            .build_cartesian_2d(0.0..7.0, 0.0..1.0)?;
-
-        chart
-            .configure_mesh()
-            .x_desc("Evaluation Dimension")
-            .y_desc("Score")
-            .x_labels(7)
-            .y_labels(10)
-            .draw()?;
-
-        let dimensions = [
-            "Activation",
-            "Forgetting",
-            "Interference",
-            "Contextual",
-            "Consolidation",
-            "Adaptation",
-            "Efficiency",
-        ];
         let values = [
             metrics.activation.top1_accuracy,
             metrics.forgetting.retrieval_precision,
@@ -418,21 +396,30 @@ impl BenchmarkRunner {
             metrics.adaptation.outdated_info_superseded,
             1.0 - (metrics.efficiency.retrieval_latency_p50 / 1000.0).min(1.0),
         ];
+        let left_margin = 70;
+        let bottom = height as i32 - 70;
+        let top = 60;
+        let chart_height = bottom - top;
+        let slot_width = 95;
+        let bar_width = 58;
 
-        chart.draw_series(dimensions.iter().zip(values.iter()).enumerate().map(
-            |(i, (_dim, val))| {
-                Rectangle::new(
-                    [(i as f64 - 0.4, 0.0), (i as f64 + 0.4, *val)],
-                    BLUE.filled(),
-                )
-            },
+        root.draw(&PathElement::new(
+            vec![
+                (left_margin, top),
+                (left_margin, bottom),
+                (width as i32 - 40, bottom),
+            ],
+            BLACK,
         ))?;
 
-        chart
-            .configure_series_labels()
-            .background_style(WHITE.mix(0.8))
-            .border_style(BLACK)
-            .draw()?;
+        for (idx, value) in values.iter().enumerate() {
+            let x0 = left_margin + 25 + idx as i32 * slot_width;
+            let x1 = x0 + bar_width;
+            let bar_height = (*value * chart_height as f64).round() as i32;
+            let y0 = bottom - bar_height;
+            let color = RGBColor(46, 113, 255).mix(0.85);
+            root.draw(&Rectangle::new([(x0, y0), (x1, bottom)], color.filled()))?;
+        }
 
         root.present()?;
         println!("Plot saved to: {}", plot_path.display());
