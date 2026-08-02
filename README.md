@@ -11,6 +11,9 @@
   <a href="https://github.com/Achiral-AI/cognoscenti/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License">
   </a>
+  <a href="https://discord.gg/9vrw6RxKP">
+    <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Join Discord">
+  </a>
 </p>
 
 **Cognoscenti** is a benchmarking tool for **cognitive memory systems** or [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
