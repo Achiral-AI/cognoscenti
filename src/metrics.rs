@@ -1,8 +1,8 @@
-use crate::dimensions::*;
 use crate::core::RetrievalResult;
+use crate::dimensions::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use statrs::statistics::Statistics;
+use std::collections::HashMap;
 
 /// Comprehensive benchmark metrics collection
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +42,8 @@ impl MetricsCollector {
     pub fn record_retrieval(&mut self, result: RetrievalResult) {
         self.retrieval_latencies.push(result.retrieval_latency_ms);
         self.memories_examined.push(result.memories_examined);
-        self.activation_scores.extend(result.confidence_scores.clone());
+        self.activation_scores
+            .extend(result.confidence_scores.clone());
         self.retrieval_results.push(result);
     }
 
@@ -69,11 +70,9 @@ impl MetricsCollector {
 
     fn compute_activation_metrics(&self) -> ActivationMetrics {
         let mut metrics = ActivationMetrics::new();
-        
+
         if !self.retrieval_latencies.is_empty() {
-            let latencies: Vec<f64> = self.retrieval_latencies.iter()
-                .map(|&x| x as f64)
-                .collect();
+            let latencies: Vec<f64> = self.retrieval_latencies.iter().map(|&x| x as f64).collect();
             metrics.avg_retrieval_latency_ms = latencies.mean();
         }
 
@@ -93,7 +92,7 @@ impl MetricsCollector {
 
     fn compute_forgetting_metrics(&self) -> ForgettingMetrics {
         let mut metrics = ForgettingMetrics::new();
-        
+
         // Placeholder computations based on retrieval patterns
         metrics.junk_activation_rate = 0.12;
         metrics.retrieval_precision = 0.88;
@@ -106,15 +105,15 @@ impl MetricsCollector {
 
     fn compute_interference_metrics(&self) -> InterferenceMetrics {
         let mut metrics = InterferenceMetrics::new();
-        
+
         metrics.top1_accuracy = 0.78;
         metrics.top3_accuracy = 0.89;
         metrics.distractor_count = 3;
-        
+
         if !self.activation_scores.is_empty() {
             metrics.avg_retrieval_confidence = self.activation_scores.clone().mean();
         }
-        
+
         metrics.confusion_rate = 0.11;
 
         metrics
@@ -122,14 +121,13 @@ impl MetricsCollector {
 
     fn compute_contextual_metrics(&self) -> ContextualMetrics {
         let mut metrics = ContextualMetrics::new();
-        
+
         if !self.context_switches.is_empty() {
             let successes = self.context_switches.iter().filter(|(s, _)| *s).count();
-            metrics.context_switch_success_rate = successes as f64 / self.context_switches.len() as f64;
-            
-            let accuracies: Vec<f64> = self.context_switches.iter()
-                .map(|(_, acc)| *acc)
-                .collect();
+            metrics.context_switch_success_rate =
+                successes as f64 / self.context_switches.len() as f64;
+
+            let accuracies: Vec<f64> = self.context_switches.iter().map(|(_, acc)| *acc).collect();
             if !accuracies.is_empty() {
                 let avg_accuracy = accuracies.mean();
                 metrics.cross_context_interference = 1.0 - avg_accuracy;
@@ -151,7 +149,7 @@ impl MetricsCollector {
 
     fn compute_consolidation_metrics(&self) -> ConsolidationMetrics {
         let mut metrics = ConsolidationMetrics::new();
-        
+
         if self.consolidation_data.len() > 1 {
             let first_latency = self.consolidation_data[0].1 as f64;
             let last_latency = self.consolidation_data.last().unwrap().1 as f64;
@@ -167,7 +165,7 @@ impl MetricsCollector {
 
     fn compute_adaptation_metrics(&self) -> AdaptationMetrics {
         let mut metrics = AdaptationMetrics::new();
-        
+
         metrics.outdated_info_superseded = 0.83;
         metrics.historical_context_preserved = 0.76;
         metrics.adaptation_latency_ms = 150.0;
@@ -178,11 +176,9 @@ impl MetricsCollector {
 
     fn compute_efficiency_metrics(&self) -> EfficiencyMetrics {
         let mut metrics = EfficiencyMetrics::new();
-        
+
         if !self.memories_examined.is_empty() {
-            let examined: Vec<f64> = self.memories_examined.iter()
-                .map(|&x| x as f64)
-                .collect();
+            let examined: Vec<f64> = self.memories_examined.iter().map(|&x| x as f64).collect();
             metrics.memories_examined_avg = examined.mean();
         }
 
@@ -191,7 +187,7 @@ impl MetricsCollector {
         if !self.retrieval_latencies.is_empty() {
             let mut sorted_latencies = self.retrieval_latencies.clone();
             sorted_latencies.sort();
-            
+
             let len = sorted_latencies.len();
             metrics.retrieval_latency_p50 = sorted_latencies[len / 2] as f64;
             metrics.retrieval_latency_p95 = sorted_latencies[(len * 95) / 100] as f64;

@@ -58,7 +58,7 @@ impl Workload {
         let mut rng = rand::thread_rng();
         let start_date = Utc::now() - Duration::days((self.duration_months * 30) as i64);
         let end_date = Utc::now();
-        
+
         let events_per_day = match self.workload_type {
             WorkloadType::Strategic => 5,
             WorkloadType::Technical => 15,
@@ -70,25 +70,29 @@ impl Workload {
         let mut current_date = start_date;
         while current_date < end_date {
             let daily_events = rng.gen_range(events_per_day..events_per_day + 3);
-            
+
             for _ in 0..daily_events {
                 let event = self.generate_event(current_date, &mut rng)?;
                 self.events.push(event);
             }
-            
-            current_date = current_date + Duration::days(1);
+
+            current_date += Duration::days(1);
         }
 
         // Convert events to memory chunks
         self.convert_events_to_chunks();
-        
+
         Ok(())
     }
 
-    fn generate_event(&self, date: DateTime<Utc>, rng: &mut impl Rng) -> anyhow::Result<SimulationEvent> {
+    fn generate_event(
+        &self,
+        date: DateTime<Utc>,
+        rng: &mut impl Rng,
+    ) -> anyhow::Result<SimulationEvent> {
         let hour = rng.gen_range(9..18);
         let timestamp = date + Duration::hours(hour);
-        
+
         let (event_type, context, content) = match self.workload_type {
             WorkloadType::Strategic => self.generate_strategic_event(rng),
             WorkloadType::Technical => self.generate_technical_event(rng),
@@ -115,7 +119,7 @@ impl Workload {
             EventType::RoadmapUpdate,
         ];
         let event_type = events[rng.gen_range(0..events.len())];
-        
+
         let context = Context {
             project: Some("High-Level Decisions".to_string()),
             domain: Domain::General,
@@ -123,7 +127,7 @@ impl Workload {
             participants: vec!["decision-maker".to_string()],
         };
 
-        let contents = vec![
+        let contents = [
             "Discussed Q4 roadmap priorities",
             "Decided to pivot to enterprise market",
             "Reviewed fundraising strategy",
@@ -143,7 +147,7 @@ impl Workload {
             EventType::DocumentCreation,
         ];
         let event_type = events[rng.gen_range(0..events.len())];
-        
+
         let context = Context {
             project: Some("Technical Evolution".to_string()),
             domain: Domain::Engineering,
@@ -151,7 +155,7 @@ impl Workload {
             participants: vec!["technical-agent".to_string()],
         };
 
-        let contents = vec![
+        let contents = [
             "Fixed critical bug in authentication module",
             "Discussed API rate limiting strategy",
             "Reviewed pull request for feature X",
@@ -170,7 +174,7 @@ impl Workload {
             EventType::Chat,
         ];
         let event_type = events[rng.gen_range(0..events.len())];
-        
+
         let context = Context {
             project: Some("Cross-Domain Patterns".to_string()),
             domain: Domain::Design,
@@ -178,7 +182,7 @@ impl Workload {
             participants: vec!["creative-agent".to_string()],
         };
 
-        let contents = vec![
+        let contents = [
             "Updated UI mockups for dashboard",
             "Conducted user research interviews",
             "Refined color palette for brand consistency",
@@ -191,12 +195,9 @@ impl Workload {
     }
 
     fn generate_episodic_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
-        let events = [
-            EventType::Chat,
-            EventType::Meeting,
-        ];
+        let events = [EventType::Chat, EventType::Meeting];
         let event_type = events[rng.gen_range(0..events.len())];
-        
+
         let context = Context {
             project: Some("Short-Term Interactions".to_string()),
             domain: Domain::General,
@@ -204,7 +205,7 @@ impl Workload {
             participants: vec!["episodic-agent".to_string()],
         };
 
-        let contents = vec![
+        let contents = [
             "Reported issue with login flow",
             "Requested feature for export functionality",
             "Provided feedback on user experience",
@@ -217,12 +218,9 @@ impl Workload {
     }
 
     fn generate_analytical_event(&self, rng: &mut impl Rng) -> (EventType, Context, String) {
-        let events = [
-            EventType::Meeting,
-            EventType::Decision,
-        ];
+        let events = [EventType::Meeting, EventType::Decision];
         let event_type = events[rng.gen_range(0..events.len())];
-        
+
         let context = Context {
             project: Some("Precision Analysis".to_string()),
             domain: Domain::Finance,
@@ -230,7 +228,7 @@ impl Workload {
             participants: vec!["analytical-agent".to_string()],
         };
 
-        let contents = vec![
+        let contents = [
             "Discussed term sheet for Series A",
             "Reviewed monthly metrics and KPIs",
             "Evaluated market opportunity",
@@ -242,11 +240,19 @@ impl Workload {
         (event_type, context, content)
     }
 
-    fn generate_participants(&self, workload_type: &WorkloadType, rng: &mut impl Rng) -> Vec<String> {
+    fn generate_participants(
+        &self,
+        workload_type: &WorkloadType,
+        rng: &mut impl Rng,
+    ) -> Vec<String> {
         match workload_type {
             WorkloadType::Strategic => vec!["decision-maker".to_string()],
-            WorkloadType::Technical => (0..rng.gen_range(1..4)).map(|_| format!("tech-agent-{}", rng.gen::<u32>())).collect(),
-            WorkloadType::Creative => (0..rng.gen_range(1..3)).map(|_| format!("creative-agent-{}", rng.gen::<u32>())).collect(),
+            WorkloadType::Technical => (0..rng.gen_range(1..4))
+                .map(|_| format!("tech-agent-{}", rng.gen::<u32>()))
+                .collect(),
+            WorkloadType::Creative => (0..rng.gen_range(1..3))
+                .map(|_| format!("creative-agent-{}", rng.gen::<u32>()))
+                .collect(),
             WorkloadType::Episodic => vec!["episodic-agent".to_string()],
             WorkloadType::Analytical => vec!["analytical-agent".to_string()],
         }
@@ -270,10 +276,10 @@ impl Workload {
         }
 
         for i in 1..self.events.len() {
-            if self.events[i].context.domain != self.events[i-1].context.domain {
+            if self.events[i].context.domain != self.events[i - 1].context.domain {
                 switches.push((
                     self.events[i].timestamp,
-                    self.events[i-1].context.clone(),
+                    self.events[i - 1].context.clone(),
                     self.events[i].context.clone(),
                 ));
             }

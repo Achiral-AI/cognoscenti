@@ -1,43 +1,52 @@
 use crate::core::{MemoryChunk, RetrievalResult};
+use crate::eval;
 use crate::metrics::{BenchmarkMetrics, MetricsCollector};
 use crate::workload::{Workload, WorkloadType};
-use rand::Rng;
 use anyhow::Result;
 use chrono::Utc;
 use clap::Parser;
-use serde_json;
+use rand::Rng;
 use std::fs;
-use std::fs::File;
-use std::io::BufWriter;
 use std::path::PathBuf;
 use std::time::Instant;
-use printpdf::*;
 
 /// Configuration for running benchmarks
 #[derive(Debug, Clone, Parser)]
 pub struct BenchmarkConfig {
     /// Type of workload to simulate
-    #[clap(long, default_value = "engineers")]
+    #[clap(long, default_value = "technical")]
     pub workload: String,
-    
+
     /// Duration of simulation in months
     #[clap(long, default_value = "6")]
     pub duration_months: u32,
-    
+
     /// Number of retrieval operations to simulate
     #[clap(long, default_value = "1000")]
     pub retrieval_count: u32,
-    
+
     /// Output directory for results
     #[clap(long, default_value = "./results")]
     pub output_dir: String,
-    
+
+    /// Comma-separated memory systems for JSONL item evals: local, mem0, supermemory, zep, letta
+    #[clap(long, alias = "system", default_value = "local")]
+    pub systems: String,
+
+    /// JSONL benchmark item file for external memory-system eval mode
+    #[clap(long)]
+    pub items_file: Option<String>,
+
+    /// Number of retrieved memories to evaluate per query
+    #[clap(long, default_value = "3")]
+    pub top_k: usize,
+
     /// Whether to generate plots
-    #[clap(long, default_value = "true")]
+    #[clap(long, default_value_t = true)]
     pub generate_plots: bool,
 
     /// Whether to generate PDF report
-    #[clap(long, default_value = "true")]
+    #[clap(long, default_value_t = true)]
     pub generate_pdf: bool,
 }
 
@@ -57,7 +66,12 @@ impl BenchmarkRunner {
             "creative" => WorkloadType::Creative,
             "episodic" => WorkloadType::Episodic,
             "analytical" => WorkloadType::Analytical,
-            _ => return Err(anyhow::anyhow!("Unknown workload type: {}", config.workload)),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unknown workload type: {}",
+                    config.workload
+                ))
+            }
         };
 
         let mut workload = Workload::new(workload_type, config.duration_months);
@@ -74,10 +88,20 @@ impl BenchmarkRunner {
     }
 
     pub fn run(&mut self) -> Result<BenchmarkMetrics> {
-        println!("Starting benchmark with {} workload over {} months", 
-                 self.config.workload, self.config.duration_months);
-        println!("Generated {} memory chunks from {} events",
-                 self.memory_chunks.len(), self.workload.events.len());
+        if self.config.items_file.is_some() {
+            eval::run_memory_eval(&self.config)?;
+            return Ok(self.collector.compute_metrics());
+        }
+
+        println!(
+            "Starting benchmark with {} workload over {} months",
+            self.config.workload, self.config.duration_months
+        );
+        println!(
+            "Generated {} memory chunks from {} events",
+            self.memory_chunks.len(),
+            self.workload.events.len()
+        );
 
         // Simulate retrieval operations
         self.simulate_retrievals()?;
@@ -111,34 +135,30 @@ impl BenchmarkRunner {
     }
 
     fn simulate_retrievals(&mut self) -> Result<()> {
-        println!("\nSimulating {} retrieval operations...", self.config.retrieval_count);
-        
+        println!(
+            "\nSimulating {} retrieval operations...",
+            self.config.retrieval_count
+        );
+
         let mut rng = rand::thread_rng();
-        
+
         for i in 0..self.config.retrieval_count {
             let start = Instant::now();
-            
+
             // Simulate retrieval by selecting random chunks
             let chunk_count = rng.gen_range(1..=10);
             let selected_indices: Vec<usize> = (0..self.memory_chunks.len())
-                .collect::<Vec<_>>()
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .iter()
-                .cloned()
                 .cycle()
                 .take(chunk_count)
                 .collect();
-            
+
             let retrieved_chunks: Vec<MemoryChunk> = selected_indices
                 .iter()
                 .map(|&idx| self.memory_chunks[idx].clone())
                 .collect();
 
-            let confidence_scores: Vec<f64> = (0..chunk_count)
-                .map(|_| rng.gen_range(0.5..1.0))
-                .collect();
+            let confidence_scores: Vec<f64> =
+                (0..chunk_count).map(|_| rng.gen_range(0.5..1.0)).collect();
 
             let result = RetrievalResult {
                 retrieved_chunks,
@@ -151,7 +171,11 @@ impl BenchmarkRunner {
             self.collector.record_retrieval(result);
 
             if (i + 1) % 100 == 0 {
-                println!("  Completed {}/{} retrievals", i + 1, self.config.retrieval_count);
+                println!(
+                    "  Completed {}/{} retrievals",
+                    i + 1,
+                    self.config.retrieval_count
+                );
             }
         }
 
@@ -160,7 +184,7 @@ impl BenchmarkRunner {
 
     fn simulate_context_switches(&mut self) -> Result<()> {
         println!("\nSimulating context switches...");
-        
+
         let switches = self.workload.get_context_switching_points();
         println!("  Found {} context switches", switches.len());
 
@@ -176,7 +200,7 @@ impl BenchmarkRunner {
 
     fn simulate_consolidation(&mut self) -> Result<()> {
         println!("\nSimulating memory consolidation...");
-        
+
         let mut rng = rand::thread_rng();
         for _i in 0..100 {
             let access_count = rng.gen_range(1..20);
@@ -189,35 +213,86 @@ impl BenchmarkRunner {
 
     fn print_metrics(&self, metrics: &BenchmarkMetrics) {
         println!("\n--- Activation Metrics ---");
-        println!("  Top-1 Accuracy: {:.2}%", metrics.activation.top1_accuracy * 100.0);
-        println!("  Top-3 Accuracy: {:.2}%", metrics.activation.top3_accuracy * 100.0);
-        println!("  Avg Retrieval Latency: {:.2}ms", metrics.activation.avg_retrieval_latency_ms);
+        println!(
+            "  Top-1 Accuracy: {:.2}%",
+            metrics.activation.top1_accuracy * 100.0
+        );
+        println!(
+            "  Top-3 Accuracy: {:.2}%",
+            metrics.activation.top3_accuracy * 100.0
+        );
+        println!(
+            "  Avg Retrieval Latency: {:.2}ms",
+            metrics.activation.avg_retrieval_latency_ms
+        );
 
         println!("\n--- Selective Forgetting ---");
-        println!("  Junk Activation Rate: {:.2}%", metrics.forgetting.junk_activation_rate * 100.0);
-        println!("  Retrieval Precision: {:.2}%", metrics.forgetting.retrieval_precision * 100.0);
+        println!(
+            "  Junk Activation Rate: {:.2}%",
+            metrics.forgetting.junk_activation_rate * 100.0
+        );
+        println!(
+            "  Retrieval Precision: {:.2}%",
+            metrics.forgetting.retrieval_precision * 100.0
+        );
 
         println!("\n--- Interference Resistance ---");
-        println!("  Top-1 Accuracy: {:.2}%", metrics.interference.top1_accuracy * 100.0);
-        println!("  Confusion Rate: {:.2}%", metrics.interference.confusion_rate * 100.0);
+        println!(
+            "  Top-1 Accuracy: {:.2}%",
+            metrics.interference.top1_accuracy * 100.0
+        );
+        println!(
+            "  Confusion Rate: {:.2}%",
+            metrics.interference.confusion_rate * 100.0
+        );
 
         println!("\n--- Contextual Recall ---");
-        println!("  Context Switch Success: {:.2}%", metrics.contextual.context_switch_success_rate * 100.0);
-        println!("  Cross-Context Interference: {:.2}%", metrics.contextual.cross_context_interference * 100.0);
+        println!(
+            "  Context Switch Success: {:.2}%",
+            metrics.contextual.context_switch_success_rate * 100.0
+        );
+        println!(
+            "  Cross-Context Interference: {:.2}%",
+            metrics.contextual.cross_context_interference * 100.0
+        );
 
         println!("\n--- Memory Consolidation ---");
-        println!("  Retrieval Speed Improvement: {:.2}%", metrics.consolidation.retrieval_speed_improvement * 100.0);
-        println!("  Consolidation Rate: {:.2}%", metrics.consolidation.consolidation_rate * 100.0);
+        println!(
+            "  Retrieval Speed Improvement: {:.2}%",
+            metrics.consolidation.retrieval_speed_improvement * 100.0
+        );
+        println!(
+            "  Consolidation Rate: {:.2}%",
+            metrics.consolidation.consolidation_rate * 100.0
+        );
 
         println!("\n--- Adaptation ---");
-        println!("  Outdated Info Superseded: {:.2}%", metrics.adaptation.outdated_info_superseded * 100.0);
-        println!("  Historical Context Preserved: {:.2}%", metrics.adaptation.historical_context_preserved * 100.0);
+        println!(
+            "  Outdated Info Superseded: {:.2}%",
+            metrics.adaptation.outdated_info_superseded * 100.0
+        );
+        println!(
+            "  Historical Context Preserved: {:.2}%",
+            metrics.adaptation.historical_context_preserved * 100.0
+        );
 
         println!("\n--- Efficiency ---");
-        println!("  Avg Memories Examined: {:.2}", metrics.efficiency.memories_examined_avg);
-        println!("  P50 Latency: {:.2}ms", metrics.efficiency.retrieval_latency_p50);
-        println!("  P95 Latency: {:.2}ms", metrics.efficiency.retrieval_latency_p95);
-        println!("  P99 Latency: {:.2}ms", metrics.efficiency.retrieval_latency_p99);
+        println!(
+            "  Avg Memories Examined: {:.2}",
+            metrics.efficiency.memories_examined_avg
+        );
+        println!(
+            "  P50 Latency: {:.2}ms",
+            metrics.efficiency.retrieval_latency_p50
+        );
+        println!(
+            "  P95 Latency: {:.2}ms",
+            metrics.efficiency.retrieval_latency_p95
+        );
+        println!(
+            "  P99 Latency: {:.2}ms",
+            metrics.efficiency.retrieval_latency_p99
+        );
     }
 
     fn save_results(&self, metrics: &BenchmarkMetrics) -> Result<()> {
@@ -232,25 +307,69 @@ impl BenchmarkRunner {
         // Save as CSV for easy analysis
         let csv_path = output_path.join("benchmark_metrics.csv");
         let mut wtr = csv::Writer::from_path(csv_path.clone())?;
-        
-        wtr.write_record(&["dimension", "metric", "value"])?;
-        
-        wtr.write_record(&["activation", "top1_accuracy", &metrics.activation.top1_accuracy.to_string()])?;
-        wtr.write_record(&["activation", "top3_accuracy", &metrics.activation.top3_accuracy.to_string()])?;
-        wtr.write_record(&["activation", "avg_latency_ms", &metrics.activation.avg_retrieval_latency_ms.to_string()])?;
-        
-        wtr.write_record(&["forgetting", "junk_activation_rate", &metrics.forgetting.junk_activation_rate.to_string()])?;
-        wtr.write_record(&["forgetting", "retrieval_precision", &metrics.forgetting.retrieval_precision.to_string()])?;
-        
-        wtr.write_record(&["interference", "top1_accuracy", &metrics.interference.top1_accuracy.to_string()])?;
-        wtr.write_record(&["interference", "confusion_rate", &metrics.interference.confusion_rate.to_string()])?;
-        
-        wtr.write_record(&["contextual", "context_switch_success_rate", &metrics.contextual.context_switch_success_rate.to_string()])?;
-        
-        wtr.write_record(&["efficiency", "memories_examined_avg", &metrics.efficiency.memories_examined_avg.to_string()])?;
-        wtr.write_record(&["efficiency", "p50_latency_ms", &metrics.efficiency.retrieval_latency_p50.to_string()])?;
-        wtr.write_record(&["efficiency", "p95_latency_ms", &metrics.efficiency.retrieval_latency_p95.to_string()])?;
-        
+
+        wtr.write_record(["dimension", "metric", "value"])?;
+
+        wtr.write_record([
+            "activation",
+            "top1_accuracy",
+            &metrics.activation.top1_accuracy.to_string(),
+        ])?;
+        wtr.write_record([
+            "activation",
+            "top3_accuracy",
+            &metrics.activation.top3_accuracy.to_string(),
+        ])?;
+        wtr.write_record([
+            "activation",
+            "avg_latency_ms",
+            &metrics.activation.avg_retrieval_latency_ms.to_string(),
+        ])?;
+
+        wtr.write_record([
+            "forgetting",
+            "junk_activation_rate",
+            &metrics.forgetting.junk_activation_rate.to_string(),
+        ])?;
+        wtr.write_record([
+            "forgetting",
+            "retrieval_precision",
+            &metrics.forgetting.retrieval_precision.to_string(),
+        ])?;
+
+        wtr.write_record([
+            "interference",
+            "top1_accuracy",
+            &metrics.interference.top1_accuracy.to_string(),
+        ])?;
+        wtr.write_record([
+            "interference",
+            "confusion_rate",
+            &metrics.interference.confusion_rate.to_string(),
+        ])?;
+
+        wtr.write_record([
+            "contextual",
+            "context_switch_success_rate",
+            &metrics.contextual.context_switch_success_rate.to_string(),
+        ])?;
+
+        wtr.write_record([
+            "efficiency",
+            "memories_examined_avg",
+            &metrics.efficiency.memories_examined_avg.to_string(),
+        ])?;
+        wtr.write_record([
+            "efficiency",
+            "p50_latency_ms",
+            &metrics.efficiency.retrieval_latency_p50.to_string(),
+        ])?;
+        wtr.write_record([
+            "efficiency",
+            "p95_latency_ms",
+            &metrics.efficiency.retrieval_latency_p95.to_string(),
+        ])?;
+
         wtr.flush()?;
         println!("CSV metrics saved to: {}", csv_path.display());
 
@@ -259,13 +378,13 @@ impl BenchmarkRunner {
 
     fn generate_plots(&self, metrics: &BenchmarkMetrics) -> Result<()> {
         use plotters::prelude::*;
-        
+
         let output_path = PathBuf::from(&self.config.output_dir);
         let plot_path = output_path.join("metrics_overview.png");
-        
+
         let root = BitMapBackend::new(&plot_path, (800, 600)).into_drawing_area();
         root.fill(&WHITE)?;
-        
+
         let mut chart = ChartBuilder::on(&root)
             .caption("Cognoscenti Benchmark Metrics", ("sans-serif", 40))
             .margin(20)
@@ -273,14 +392,23 @@ impl BenchmarkRunner {
             .y_label_area_size(80)
             .build_cartesian_2d(0.0..7.0, 0.0..1.0)?;
 
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_desc("Evaluation Dimension")
             .y_desc("Score")
             .x_labels(7)
             .y_labels(10)
             .draw()?;
 
-        let dimensions = ["Activation", "Forgetting", "Interference", "Contextual", "Consolidation", "Adaptation", "Efficiency"];
+        let dimensions = [
+            "Activation",
+            "Forgetting",
+            "Interference",
+            "Contextual",
+            "Consolidation",
+            "Adaptation",
+            "Efficiency",
+        ];
         let values = [
             metrics.activation.top1_accuracy,
             metrics.forgetting.retrieval_precision,
@@ -291,15 +419,19 @@ impl BenchmarkRunner {
             1.0 - (metrics.efficiency.retrieval_latency_p50 / 1000.0).min(1.0),
         ];
 
-        chart.draw_series(
-            dimensions.iter().zip(values.iter()).enumerate().map(|(i, (_dim, val))| {
-                Rectangle::new([(i as f64 - 0.4, 0.0), (i as f64 + 0.4, *val)], BLUE.filled())
-            })
-        )?;
+        chart.draw_series(dimensions.iter().zip(values.iter()).enumerate().map(
+            |(i, (_dim, val))| {
+                Rectangle::new(
+                    [(i as f64 - 0.4, 0.0), (i as f64 + 0.4, *val)],
+                    BLUE.filled(),
+                )
+            },
+        ))?;
 
-        chart.configure_series_labels()
-            .background_style(&WHITE.mix(0.8))
-            .border_style(&BLACK)
+        chart
+            .configure_series_labels()
+            .background_style(WHITE.mix(0.8))
+            .border_style(BLACK)
             .draw()?;
 
         root.present()?;
@@ -312,90 +444,192 @@ impl BenchmarkRunner {
         let output_path = PathBuf::from(&self.config.output_dir);
         let pdf_path = output_path.join("benchmark_report.pdf");
 
-        // Create PDF document
-        let (doc, page1, layer1) = PdfDocument::new("Cognoscenti Benchmark Report", Mm(210.0), Mm(297.0), "Layer 1");
-        let current_layer = doc.get_page(page1).get_layer(layer1);
-
-        // Add font
-        let font = doc.add_builtin_font(BuiltinFont::HelveticaBold)?;
-
-        // Title
-        let title = format!("Cognoscenti Benchmark Report - {} Workload", self.config.workload);
-        current_layer.use_text(&title, 24.0, Mm(20.0), Mm(270.0), &font);
-
-        // Timestamp
-        let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
-        let timestamp_text = format!("Generated: {}", timestamp);
-        current_layer.use_text(&timestamp_text, 10.0, Mm(20.0), Mm(260.0), &font);
-
-        // Metrics content
-        let metrics_text = format!(
-            "=== Benchmark Results ===\n\n\
-             Workload: {}\n\
-             Duration: {} months\n\
-             Retrievals: {}\n\n\
-             --- Activation Metrics ---\n\
-             Top-1 Accuracy: {:.2}%\n\
-             Top-3 Accuracy: {:.2}%\n\
-             Avg Retrieval Latency: {:.2}ms\n\n\
-             --- Selective Forgetting ---\n\
-             Junk Activation Rate: {:.2}%\n\
-             Retrieval Precision: {:.2}%\n\n\
-             --- Interference Resistance ---\n\
-             Top-1 Accuracy: {:.2}%\n\
-             Confusion Rate: {:.2}%\n\n\
-             --- Contextual Recall ---\n\
-             Context Switch Success: {:.2}%\n\
-             Cross-Context Interference: {:.2}%\n\n\
-             --- Memory Consolidation ---\n\
-             Retrieval Speed Improvement: {:.2}%\n\
-             Consolidation Rate: {:.2}%\n\n\
-             --- Adaptation ---\n\
-             Outdated Info Superseded: {:.2}%\n\
-             Historical Context Preserved: {:.2}%\n\n\
-             --- Efficiency ---\n\
-             Avg Memories Examined: {:.2}\n\
-             P50 Latency: {:.2}ms\n\
-             P95 Latency: {:.2}ms\n\
-             P99 Latency: {:.2}ms",
-            self.config.workload,
-            self.config.duration_months,
-            self.config.retrieval_count,
-            metrics.activation.top1_accuracy * 100.0,
-            metrics.activation.top3_accuracy * 100.0,
-            metrics.activation.avg_retrieval_latency_ms,
-            metrics.forgetting.junk_activation_rate * 100.0,
-            metrics.forgetting.retrieval_precision * 100.0,
-            metrics.interference.top1_accuracy * 100.0,
-            metrics.interference.confusion_rate * 100.0,
-            metrics.contextual.context_switch_success_rate * 100.0,
-            metrics.contextual.cross_context_interference * 100.0,
-            metrics.consolidation.retrieval_speed_improvement * 100.0,
-            metrics.consolidation.consolidation_rate * 100.0,
-            metrics.adaptation.outdated_info_superseded * 100.0,
-            metrics.adaptation.historical_context_preserved * 100.0,
-            metrics.efficiency.memories_examined_avg,
-            metrics.efficiency.retrieval_latency_p50,
-            metrics.efficiency.retrieval_latency_p95,
-            metrics.efficiency.retrieval_latency_p99
-        );
-
-        let mut y_pos = 240.0;
-        for line in metrics_text.lines() {
-            current_layer.use_text(line, 10.0, Mm(20.0), Mm(y_pos), &font);
-            y_pos -= 5.0;
-        }
-
-        // Footer
-        let footer = "https://achiral.ai | Let's make memories together.";
-        current_layer.use_text(footer, 10.0, Mm(20.0), Mm(20.0), &font);
-
-        // Save PDF
-        let file = File::create(&pdf_path)?;
-        let mut writer = BufWriter::new(file);
-        doc.save(&mut writer)?;
+        let lines = self.report_lines(metrics);
+        let pdf = render_text_pdf("Cognoscenti Benchmark Report", &lines);
+        fs::write(&pdf_path, pdf)?;
         println!("PDF report saved to: {}", pdf_path.display());
 
         Ok(())
+    }
+
+    fn report_lines(&self, metrics: &BenchmarkMetrics) -> Vec<String> {
+        vec![
+            format!(
+                "Cognoscenti Benchmark Report - {} Workload",
+                self.config.workload
+            ),
+            format!("Generated: {}", Utc::now().format("%Y-%m-%d %H:%M:%S UTC")),
+            String::new(),
+            "=== Benchmark Results ===".to_string(),
+            format!("Workload: {}", self.config.workload),
+            format!("Duration: {} months", self.config.duration_months),
+            format!("Retrievals: {}", self.config.retrieval_count),
+            String::new(),
+            "--- Activation Metrics ---".to_string(),
+            format!(
+                "Top-1 Accuracy: {:.2}%",
+                metrics.activation.top1_accuracy * 100.0
+            ),
+            format!(
+                "Top-3 Accuracy: {:.2}%",
+                metrics.activation.top3_accuracy * 100.0
+            ),
+            format!(
+                "Avg Retrieval Latency: {:.2}ms",
+                metrics.activation.avg_retrieval_latency_ms
+            ),
+            String::new(),
+            "--- Selective Forgetting ---".to_string(),
+            format!(
+                "Junk Activation Rate: {:.2}%",
+                metrics.forgetting.junk_activation_rate * 100.0
+            ),
+            format!(
+                "Retrieval Precision: {:.2}%",
+                metrics.forgetting.retrieval_precision * 100.0
+            ),
+            String::new(),
+            "--- Interference Resistance ---".to_string(),
+            format!(
+                "Top-1 Accuracy: {:.2}%",
+                metrics.interference.top1_accuracy * 100.0
+            ),
+            format!(
+                "Confusion Rate: {:.2}%",
+                metrics.interference.confusion_rate * 100.0
+            ),
+            String::new(),
+            "--- Contextual Recall ---".to_string(),
+            format!(
+                "Context Switch Success: {:.2}%",
+                metrics.contextual.context_switch_success_rate * 100.0
+            ),
+            format!(
+                "Cross-Context Interference: {:.2}%",
+                metrics.contextual.cross_context_interference * 100.0
+            ),
+            String::new(),
+            "--- Memory Consolidation ---".to_string(),
+            format!(
+                "Retrieval Speed Improvement: {:.2}%",
+                metrics.consolidation.retrieval_speed_improvement * 100.0
+            ),
+            format!(
+                "Consolidation Rate: {:.2}%",
+                metrics.consolidation.consolidation_rate * 100.0
+            ),
+            String::new(),
+            "--- Adaptation ---".to_string(),
+            format!(
+                "Outdated Info Superseded: {:.2}%",
+                metrics.adaptation.outdated_info_superseded * 100.0
+            ),
+            format!(
+                "Historical Context Preserved: {:.2}%",
+                metrics.adaptation.historical_context_preserved * 100.0
+            ),
+            String::new(),
+            "--- Efficiency ---".to_string(),
+            format!(
+                "Avg Memories Examined: {:.2}",
+                metrics.efficiency.memories_examined_avg
+            ),
+            format!(
+                "P50 Latency: {:.2}ms",
+                metrics.efficiency.retrieval_latency_p50
+            ),
+            format!(
+                "P95 Latency: {:.2}ms",
+                metrics.efficiency.retrieval_latency_p95
+            ),
+            format!(
+                "P99 Latency: {:.2}ms",
+                metrics.efficiency.retrieval_latency_p99
+            ),
+            String::new(),
+            "https://achiral.ai | Let's make memories together.".to_string(),
+        ]
+    }
+}
+
+fn render_text_pdf(title: &str, lines: &[String]) -> Vec<u8> {
+    let mut content = String::from("BT\n/F1 18 Tf\n50 790 Td\n");
+    content.push_str(&format!("({}) Tj\n", escape_pdf_text(title)));
+    content.push_str("/F1 10 Tf\n0 -24 Td\n");
+
+    for line in lines.iter().skip(1) {
+        content.push_str(&format!("({}) Tj\n0 -14 Td\n", escape_pdf_text(line)));
+    }
+    content.push_str("ET\n");
+
+    let objects = [
+        "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+        "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>".to_string(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_string(),
+        format!(
+            "<< /Length {} >>\nstream\n{}endstream",
+            content.len(),
+            content
+        ),
+    ];
+
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::with_capacity(objects.len());
+    for (idx, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{}\nendobj\n", idx + 1, object).as_bytes());
+    }
+
+    let xref_offset = pdf.len();
+    pdf.extend_from_slice(
+        format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+    );
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{}\n%%EOF\n",
+            objects.len() + 1,
+            xref_offset
+        )
+        .as_bytes(),
+    );
+    pdf
+}
+
+fn escape_pdf_text(text: &str) -> String {
+    text.replace('\\', "\\\\")
+        .replace('(', "\\(")
+        .replace(')', "\\)")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn default_workload_is_supported() {
+        let config = BenchmarkConfig::parse_from(["cognoscenti"]);
+
+        assert_eq!(config.workload, "technical");
+        assert!(BenchmarkRunner::new(config).is_ok());
+    }
+
+    #[test]
+    fn text_pdf_renderer_outputs_a_pdf_document() {
+        let pdf = render_text_pdf(
+            "Cognoscenti (Test)",
+            &[
+                "Cognoscenti (Test)".to_string(),
+                "Line with \\ slash".to_string(),
+            ],
+        );
+
+        assert!(pdf.starts_with(b"%PDF-1.4\n"));
+        assert!(pdf.ends_with(b"%%EOF\n"));
+        assert!(String::from_utf8_lossy(&pdf).contains("Cognoscenti \\(Test\\)"));
     }
 }

@@ -68,8 +68,7 @@ cargo run --release -- \
   --workload technical \
   --duration-months 6 \
   --retrieval-count 1000 \
-  --output-dir ./results \
-  --generate-plots true
+  --output-dir ./results
 ```
 
 ### Available Workloads
@@ -89,6 +88,45 @@ The benchmark generates:
 - `benchmark_results.json`: Complete metrics in JSON format
 - `benchmark_metrics.csv`: Metrics in CSV format for easy analysis
 - `metrics_overview.png`: Visual overview of benchmark results
+- `benchmark_report.pdf`: Printable report with headline metrics
+
+### Memory Tool Eval Reports
+
+Run the included JSONL benchmark items against the built-in local baseline:
+
+```bash
+cargo run --release -- \
+  --items-file examples/memory_tools.jsonl \
+  --systems local \
+  --top-k 3 \
+  --output-dir ./results/memory-tools
+```
+
+Compare multiple configured memory tools with the same items:
+
+```bash
+cargo run --release -- \
+  --items-file examples/memory_tools.jsonl \
+  --systems local,mem0,supermemory,zep,letta \
+  --top-k 3 \
+  --output-dir ./results/memory-tools
+```
+
+The eval runner always supports `local`. External tools use provider-specific environment variables:
+
+```bash
+export COGNOSCENTI_MEM0_INGEST_URL="https://..."
+export COGNOSCENTI_MEM0_RETRIEVE_URL="https://..."
+export COGNOSCENTI_MEM0_API_KEY="..."
+```
+
+Use the same pattern for `SUPERMEMORY`, `ZEP`, and `LETTA`. Provider endpoints receive JSON over `POST`; ingest requests include `system` and `memories`, and retrieval requests include `system`, `query`, `context`, and `top_k`.
+
+The memory-tool eval generates:
+
+- `memory_eval_results.json`: Per-system item results and aggregate metrics
+- `memory_eval_metrics.csv`: Comparison-ready metric table
+- `memory_eval_report.pdf`: Printable comparison report
 
 ## Contributing
 

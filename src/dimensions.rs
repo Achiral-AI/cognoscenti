@@ -14,7 +14,7 @@ pub enum EvaluationDimension {
 }
 
 /// Metrics for evaluating activation precision
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ActivationMetrics {
     pub top1_accuracy: f64,
     pub top3_accuracy: f64,
@@ -25,7 +25,7 @@ pub struct ActivationMetrics {
 }
 
 /// Metrics for evaluating selective forgetting
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ForgettingMetrics {
     pub junk_activation_rate: f64,
     pub retrieval_precision: f64,
@@ -35,7 +35,7 @@ pub struct ForgettingMetrics {
 }
 
 /// Metrics for evaluating interference resistance
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct InterferenceMetrics {
     pub top1_accuracy: f64,
     pub top3_accuracy: f64,
@@ -45,7 +45,7 @@ pub struct InterferenceMetrics {
 }
 
 /// Metrics for evaluating contextual recall
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContextualMetrics {
     pub context_switch_success_rate: f64,
     pub cross_context_interference: f64,
@@ -54,7 +54,7 @@ pub struct ContextualMetrics {
 }
 
 /// Metrics for evaluating memory consolidation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConsolidationMetrics {
     pub retrieval_speed_improvement: f64,
     pub activation_increase_per_access: f64,
@@ -63,7 +63,7 @@ pub struct ConsolidationMetrics {
 }
 
 /// Metrics for evaluating adaptation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AdaptationMetrics {
     pub outdated_info_superseded: f64,
     pub historical_context_preserved: f64,
@@ -72,7 +72,7 @@ pub struct AdaptationMetrics {
 }
 
 /// Metrics for evaluating efficiency
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EfficiencyMetrics {
     pub memories_examined_avg: f64,
     pub activated_chunks_avg: f64,
