@@ -1,0 +1,33 @@
+{
+  "title": "Cognoscenti: A Benchmark for Trustworthy AI Memory",
+  "upload_type": "software",
+  "description": "Cognoscenti is a benchmark for cognitive and emergent memory systems. The 2026-08-02 public run compares RAG, agent-memory, and organic-memory reference baselines on activation, selective forgetting, interference resistance, contextual recall, consolidation, adaptation, and efficiency.",
+  "creators": [
+    {
+      "name": "Achiral AI",
+      "affiliation": "Achiral AI"
+    }
+  ],
+  "license": "Apache-2.0",
+  "keywords": [
+    "AI memory benchmark",
+    "trustworthy AI memory",
+    "cognitive memory systems",
+    "emergent memory systems",
+    "ACT-R",
+    "agent memory",
+    "RAG"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://achiral.ai/benchmarks/ai-memory-benchmark",
+      "relation": "isSupplementedBy",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://github.com/Achiral-AI/cognoscenti",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

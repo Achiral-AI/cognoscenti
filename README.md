@@ -137,6 +137,8 @@ Run date: 2026-08-02
 
 Public report: [Organizational Memory Benchmark: RAG vs Agent Memory vs Organic Memory](https://achiral.ai/benchmarks/ai-memory-benchmark)
 
+Release notes: [2026-08-02 AI Memory Benchmark Run](docs/releases/2026-08-02-ai-memory-benchmark.md)
+
 | System | Top-1 Accuracy | Recall@3 | Precision@3 | Distractor Activation |
 | --- | ---: | ---: | ---: | ---: |
 | RAG reference baseline | 50.00% | 83.33% | 27.78% | 25.00% |
@@ -161,6 +163,30 @@ Artifacts:
 - [`results/organizational-memory-2026-08-02/memory_eval_metrics.csv`](results/organizational-memory-2026-08-02/memory_eval_metrics.csv)
 
 This run does not claim to benchmark Mem0, Zep, Letta, Glean, LangGraph, or any other vendor product. Vendor adapters exist through Cognoscenti's HTTP eval mode, but vendor results should be published only when endpoints, keys, seeds, commands, and raw outputs are recorded.
+
+## Citing Cognoscenti
+
+If you use Cognoscenti or the public benchmark artifacts, please cite the repository and the benchmark report. GitHub will surface citation metadata from [`CITATION.cff`](CITATION.cff).
+
+```bibtex
+@software{achiral_ai_2026_cognoscenti,
+  author = {{Achiral AI}},
+  title = {Cognoscenti: A Benchmark for Trustworthy AI Memory},
+  year = {2026},
+  version = {0.2.0},
+  url = {https://github.com/Achiral-AI/cognoscenti}
+}
+
+@techreport{achiral_ai_2026_ai_memory_benchmark,
+  author = {{Achiral AI}},
+  title = {AI Memory Benchmark: What Makes Memory Trustworthy?},
+  year = {2026},
+  url = {https://achiral.ai/benchmarks/ai-memory-benchmark},
+  note = {Public Cognoscenti benchmark report for the 2026-08-02 organizational-memory run}
+}
+```
+
+DOI support is prepared through [`.zenodo.json`](.zenodo.json). After Zenodo is connected to the GitHub repository and a release is archived, add the minted DOI to this section and to `CITATION.cff`.
 
 ## Contributing
 
