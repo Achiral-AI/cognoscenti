@@ -4,8 +4,9 @@ title: "Cognoscenti: A Benchmark for Trustworthy AI Memory"
 type: software
 authors:
   - name: "Achiral AI"
-version: "0.2.0"
-date-released: "2026-08-02"
+version: "0.2.1"
+date-released: "2026-08-18"
+doi: "10.5281/zenodo.21995304"
 repository-code: "https://github.com/Achiral-AI/cognoscenti"
 url: "https://achiral.ai/benchmarks/ai-memory-benchmark"
 license: "Apache-2.0"
@@ -25,4 +26,5 @@ references:
       - name: "Achiral AI"
     date-released: "2026-08-02"
     url: "https://achiral.ai/benchmarks/ai-memory-benchmark"
+    doi: "10.5281/zenodo.21995304"
     notes: "Public report for the 2026-08-02 organizational-memory benchmark run comparing RAG, agent-memory, and organic-memory reference baselines."

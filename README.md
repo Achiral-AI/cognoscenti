@@ -11,6 +11,9 @@
   <a href="https://github.com/Achiral-AI/cognoscenti/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License">
   </a>
+  <a href="https://doi.org/10.5281/zenodo.21995304">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.21995304.svg" alt="DOI">
+  </a>
   <a href="https://discord.gg/9vrw6RxKP">
     <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Join Discord">
   </a>
@@ -168,12 +171,17 @@ This run does not claim to benchmark Mem0, Zep, Letta, Glean, LangGraph, or any 
 
 If you use Cognoscenti or the public benchmark artifacts, please cite the repository and the benchmark report. GitHub will surface citation metadata from [`CITATION.cff`](CITATION.cff).
 
+Version DOI: [10.5281/zenodo.21995304](https://doi.org/10.5281/zenodo.21995304)
+
+Concept DOI: [10.5281/zenodo.21995303](https://doi.org/10.5281/zenodo.21995303)
+
 ```bibtex
 @software{achiral_ai_2026_cognoscenti,
   author = {{Achiral AI}},
   title = {Cognoscenti: A Benchmark for Trustworthy AI Memory},
   year = {2026},
-  version = {0.2.0},
+  version = {0.2.1},
+  doi = {10.5281/zenodo.21995304},
   url = {https://github.com/Achiral-AI/cognoscenti}
 }
 
@@ -181,12 +189,13 @@ If you use Cognoscenti or the public benchmark artifacts, please cite the reposi
   author = {{Achiral AI}},
   title = {AI Memory Benchmark: What Makes Memory Trustworthy?},
   year = {2026},
+  doi = {10.5281/zenodo.21995304},
   url = {https://achiral.ai/benchmarks/ai-memory-benchmark},
   note = {Public Cognoscenti benchmark report for the 2026-08-02 organizational-memory run}
 }
 ```
 
-DOI support is prepared through [`.zenodo.json`](.zenodo.json). After Zenodo is connected to the GitHub repository and a release is archived, add the minted DOI to this section and to `CITATION.cff`.
+Zenodo archival metadata is maintained in [`.zenodo.json`](.zenodo.json).
 
 ## Contributing
 
