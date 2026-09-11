@@ -1,7 +1,7 @@
 {
   "title": "Cognoscenti: A Benchmark for Trustworthy AI Memory",
   "upload_type": "software",
-  "description": "Cognoscenti is a benchmark for cognitive and emergent memory systems. The 2026-08-02 public run compares RAG, agent-memory, and organic-memory reference baselines on activation, selective forgetting, interference resistance, contextual recall, consolidation, adaptation, and efficiency.<br><br>Public benchmark report: <a href=\"https://achiral.ai/benchmarks/ai-memory-benchmark\">https://achiral.ai/benchmarks/ai-memory-benchmark</a>",
+  "description": "Cognoscenti is a benchmark for cognitive and emergent memory systems. The 2026-08-02 public run compares RAG, agent-memory, and organic-memory reference baselines on activation, selective forgetting, interference resistance, contextual recall, consolidation, adaptation, and efficiency.<br><br>Public benchmark report: <a href=\"https://achiral.ai/benchmarks/ai-memory-benchmark\">https://achiral.ai/benchmarks/ai-memory-benchmark</a><br>Figshare preprint and reproducibility bundle: <a href=\"https://doi.org/10.6084/m9.figshare.33288195\">https://doi.org/10.6084/m9.figshare.33288195</a><br>Software Heritage source archive: <a href=\"https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7\">swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7</a>",
   "creators": [
     {
       "name": "Achiral AI",
@@ -27,6 +27,16 @@
     {
       "identifier": "https://github.com/Achiral-AI/cognoscenti",
       "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "10.6084/m9.figshare.33288195",
+      "relation": "isSupplementedBy",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7",
+      "relation": "isSupplementedBy",
       "scheme": "url"
     }
   ]

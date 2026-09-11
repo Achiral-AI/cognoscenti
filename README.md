@@ -1,4 +1,4 @@
-# Cognoscenti
+# Cognoscenti: A Benchmark for Trustworthy AI Memory
 
 <p align="center">
   <img src="./assets/cognoscenti-emblem.svg" alt="Cognoscenti C mark" width="160">
@@ -19,7 +19,7 @@
   </a>
 </p>
 
-**Cognoscenti** is a benchmarking tool for **cognitive memory systems** or [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
+**Cognoscenti** is a benchmark for **trustworthy AI memory**: memory systems that choose what to retain, retrieve, forget, and suppress with measurable reliability. It evaluates **cognitive memory systems** and [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
 
 > The problem isn't how much is remembered, but what gets chosen as memory.
 
@@ -175,6 +175,10 @@ Version DOI: [10.5281/zenodo.21995304](https://doi.org/10.5281/zenodo.21995304)
 
 Concept DOI: [10.5281/zenodo.21995303](https://doi.org/10.5281/zenodo.21995303)
 
+Figshare preprint and reproducibility bundle DOI: [10.6084/m9.figshare.33288195](https://doi.org/10.6084/m9.figshare.33288195)
+
+Software Heritage source archive: [`swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7`](https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7)
+
 ```bibtex
 @software{achiral_ai_2026_cognoscenti,
   author = {{Achiral AI}},
@@ -193,7 +197,18 @@ Concept DOI: [10.5281/zenodo.21995303](https://doi.org/10.5281/zenodo.21995303)
   url = {https://achiral.ai/benchmarks/ai-memory-benchmark},
   note = {Public Cognoscenti benchmark report for the 2026-08-02 organizational-memory run}
 }
+
+@misc{achiral_ai_2026_cognoscenti_figshare,
+  author = {{Achiral AI}},
+  title = {Cognoscenti: A Benchmark for Trustworthy AI Memory},
+  year = {2026},
+  doi = {10.6084/m9.figshare.33288195},
+  url = {https://doi.org/10.6084/m9.figshare.33288195},
+  note = {Figshare preprint and reproducibility artifact bundle}
+}
 ```
+
+The Figshare preprint and benchmark artifact are shared under CC BY 4.0. Cognoscenti source code remains licensed under Apache-2.0.
 
 Zenodo archival metadata is maintained in [`.zenodo.json`](.zenodo.json).
 

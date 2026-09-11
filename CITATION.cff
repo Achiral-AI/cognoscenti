@@ -28,3 +28,18 @@ references:
     url: "https://achiral.ai/benchmarks/ai-memory-benchmark"
     doi: "10.5281/zenodo.21995304"
     notes: "Public report for the 2026-08-02 organizational-memory benchmark run comparing RAG, agent-memory, and organic-memory reference baselines."
+  - type: report
+    title: "Cognoscenti: A Benchmark for Trustworthy AI Memory"
+    authors:
+      - name: "Achiral AI"
+    date-released: "2026-08-19"
+    url: "https://doi.org/10.6084/m9.figshare.33288195"
+    doi: "10.6084/m9.figshare.33288195"
+    notes: "Figshare preprint deposit containing the preprint PDF and reproducibility artifact bundle."
+  - type: software
+    title: "Cognoscenti Software Heritage Snapshot"
+    authors:
+      - name: "Achiral AI"
+    date-released: "2026-08-19"
+    url: "https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7"
+    notes: "Software Heritage source-code preservation snapshot for the Cognoscenti Git origin."
