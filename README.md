@@ -46,7 +46,7 @@ Cognoscenti is implemented in Rust and provides a comprehensive framework for be
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/Achiral-AI/cognoscenti.git
 cd cognoscenti
 
 # Build the project
