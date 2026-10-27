@@ -17,6 +17,11 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub items_file: Option<String>,
 
+    /// Lint a stream dataset file and exit, instead of running an eval.
+    /// Fails (nonzero exit) if any issue is found, for use as a CI gate.
+    #[clap(long)]
+    pub lint_stream: Option<String>,
+
     /// Number of retrieved memories to evaluate per query
     #[clap(long, default_value = "3")]
     pub top_k: usize,
