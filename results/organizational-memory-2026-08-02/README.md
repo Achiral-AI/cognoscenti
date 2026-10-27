@@ -1,5 +1,14 @@
 # Organizational Memory Benchmark Run
 
+**Superseded 2026-10-27.** The `organic-memory` row below (91.67% Top-1) does
+not measure Achiral. `organic-memory` was a local keyword scorer that added
+points for words like "validated", "current" and "reinforced" and subtracted
+them for "superseded", "stale" and "low-signal" — and `examples/organizational_memory.jsonl`
+writes those exact words into the item text, so the scorer could read the
+answer off the data. The `organic-memory` alias, its `achiral` alias, and the
+keyword scorer have been removed from Cognoscenti. This run is kept for
+transparency, not as a result to cite.
+
 Run date: 2026-08-02
 
 This run evaluates three reference memory architectures against the same Cognoscenti JSONL workload:

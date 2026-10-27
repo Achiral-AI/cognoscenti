@@ -1,0 +1,38 @@
+<svg viewBox="0 0 640 460" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="640" height="460" fill="#ffffff"/>
+  <text x="24" y="30" font-size="16" font-weight="600" fill="#111827">Tokens injected per cycle vs. cycles (design hypothesis, not implemented)</text>
+  <text x="24" y="50" font-size="12" fill="#6b7280">One line per architecture; x-axis is log-scaled cycle count, open-ended (10, 100, 1000, ...)</text>
+
+  <!-- axes -->
+  <g stroke="#9ca3af" stroke-width="1">
+    <line x1="80" y1="380" x2="580" y2="380"/>
+    <line x1="80" y1="380" x2="80" y2="90"/>
+  </g>
+  <g fill="#6b7280" font-size="11">
+    <text x="130" y="400" text-anchor="middle">10</text>
+    <text x="330" y="400" text-anchor="middle">100</text>
+    <text x="530" y="400" text-anchor="middle">1,000</text>
+    <text x="330" y="422" text-anchor="middle" font-size="12">query-inference cycles (log scale, horizon kept open)</text>
+    <text x="30" y="235" text-anchor="middle" font-size="12" transform="rotate(-90 30 235)">tokens injected, this cycle</text>
+  </g>
+
+  <!-- full context: rises steeply -->
+  <polyline points="130,350 330,220 530,95" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="340" y="195" font-size="11" fill="#dc2626">full context (unbounded)</text>
+
+  <!-- bounded window: flat but lossy, marked with warning -->
+  <polyline points="130,300 330,300 530,300" fill="none" stroke="#9333ea" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <text x="140" y="294" font-size="11" fill="#9333ea">bounded window (flat; accuracy degrades)</text>
+
+  <!-- static RAG: flat -->
+  <polyline points="130,320 330,322 530,318" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+  <text x="140" y="338" font-size="11" fill="#2563eb">static RAG (BM25 / recency, flat)</text>
+
+  <!-- learning / ACT-R: flat to declining -->
+  <polyline points="130,330 330,310 530,265" fill="none" stroke="#16a34a" stroke-width="2.5"/>
+  <text x="180" y="245" font-size="11" fill="#16a34a">learning (ACT-R hypothesis: flat or declining</text>
+  <text x="180" y="258" font-size="11" fill="#16a34a">as calibration sharpens)</text>
+
+  <rect x="24" y="430" width="592" height="22" fill="#fef3c7"/>
+  <text x="320" y="445" font-size="11" fill="#92400e" text-anchor="middle">DESIGN HYPOTHESIS ONLY — no token-counting code exists yet. Deferred out of Tier 1; see "Where Cognoscenti stands today".</text>
+</svg>

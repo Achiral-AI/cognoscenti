@@ -1,0 +1,42 @@
+<svg viewBox="0 0 640 460" xmlns="http://www.w3.org/2000/svg" font-family="Helvetica, Arial, sans-serif">
+  <rect x="0" y="0" width="640" height="460" fill="#ffffff"/>
+  <text x="24" y="30" font-size="16" font-weight="600" fill="#111827">Trust vs. Confidence (calibration)</text>
+  <text x="24" y="50" font-size="12" fill="#6b7280">Of memories retrieved at predicted probability p, how often were they actually needed?</text>
+
+  <!-- axes -->
+  <g stroke="#9ca3af" stroke-width="1">
+    <line x1="80" y1="380" x2="580" y2="380"/>
+    <line x1="80" y1="380" x2="80" y2="90"/>
+  </g>
+  <g fill="#6b7280" font-size="11">
+    <text x="60" y="384" text-anchor="end">0.0</text>
+    <text x="60" y="94" text-anchor="end">1.0</text>
+    <text x="80" y="400" text-anchor="middle">0.0</text>
+    <text x="580" y="400" text-anchor="middle">1.0</text>
+    <text x="330" y="420" text-anchor="middle" font-size="12">Predicted P(needed)</text>
+    <text x="30" y="235" text-anchor="middle" font-size="12" transform="rotate(-90 30 235)">Observed frequency needed</text>
+  </g>
+
+  <!-- diagonal: perfect calibration -->
+  <line x1="80" y1="380" x2="580" y2="90" stroke="#16a34a" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="520" y="120" font-size="11" fill="#16a34a">perfect calibration</text>
+
+  <!-- illustrative overconfident curve -->
+  <polyline points="80,380 180,340 280,300 380,255 480,195 580,175"
+            fill="none" stroke="#dc2626" stroke-width="2.5"/>
+  <circle cx="80" cy="380" r="3.5" fill="#dc2626"/>
+  <circle cx="180" cy="340" r="3.5" fill="#dc2626"/>
+  <circle cx="280" cy="300" r="3.5" fill="#dc2626"/>
+  <circle cx="380" cy="255" r="3.5" fill="#dc2626"/>
+  <circle cx="480" cy="195" r="3.5" fill="#dc2626"/>
+  <circle cx="580" cy="175" r="3.5" fill="#dc2626"/>
+  <text x="395" y="245" font-size="11" fill="#dc2626">illustrative overconfident system</text>
+
+  <!-- illustrative well-calibrated curve -->
+  <polyline points="80,375 180,320 280,250 380,195 480,130 580,100"
+            fill="none" stroke="#2563eb" stroke-width="2.5" stroke-dasharray="2 4"/>
+  <text x="340" y="175" font-size="11" fill="#2563eb">illustrative well-calibrated system</text>
+
+  <rect x="24" y="430" width="592" height="22" fill="#f3f4f6"/>
+  <text x="320" y="445" font-size="11" fill="#6b7280" text-anchor="middle">SCHEMATIC — shows what calibration.rs computes (reliability_curve, brier_score, ECE). No run has produced this curve yet.</text>
+</svg>
