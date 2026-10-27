@@ -249,6 +249,80 @@ covers activation-style retrieval (Top-1, recall@k, precision@k, distractor
 activation) against a single frozen set of items, asked once. It does not yet
 measure forgetting, consolidation, or adaptation as behavior over time.
 
+## Measurement framework
+
+Trustworthy memory, for Cognoscenti, is tested on three axes: does its stated
+confidence mean anything (calibration), does it agree with itself when
+repeated (stability), and does it respect the boundaries it's told (scope).
+A fourth, planned axis asks what it costs: does a system that learns from use
+need fewer tokens per query over time than one that doesn't.
+
+**Every diagram below is a schematic of what the code computes, not a
+measured result.** Nothing in this repository has been run against a live
+system yet — see the "Organizational Memory Run (2026-08-02) — superseded"
+section below. A number appears on this page only once a real run backs it.
+
+### 1. Trust vs. confidence (calibration)
+
+<img src="assets/plots/trust-vs-confidence.svg" alt="Schematic reliability diagram: predicted probability vs. observed frequency needed, with a perfect-calibration diagonal and two illustrative curves" width="560">
+
+Of memories retrieved at predicted probability *p*, how often were they
+actually needed? Computed by [`src/calibration.rs`](src/calibration.rs)
+(`reliability_curve`, `brier_score`, `expected_calibration_error`) — and
+*derived* for any system that exposes only a raw score or rank, via
+`derive_probabilities_from_scores`, so a vendor can't opt out of calibration
+by simply not stating a probability.
+
+### 2. Trust vs. repetition (run-to-run stability)
+
+<img src="assets/plots/trust-vs-repetition.svg" alt="Schematic comparison of a stable system (rank agreement clustered near 1) and an unstable system (rank agreement scattered near 0) across replicate pairs" width="560">
+
+Same stream, same order, repeated: does the ranking agree with itself?
+Computed by [`src/stability.rs`](src/stability.rs) (`flip_rate`,
+`rank_agreement`, Kendall's tau over the items both rankings returned). All
+five stability tests Cognoscenti measures — run-to-run, order sensitivity,
+paraphrase robustness, stability against plasticity, lock-in — are built,
+tested, and documented in that module; none has been run against a live
+replicate set yet.
+
+### 3. Trust vs. scope (leak safety)
+
+<img src="assets/plots/trust-vs-scope.svg" alt="Diagram of org, user, and agent scopes with two unauthorized access attempts blocked, including a user and agent sharing the same id" width="560">
+
+Does a memory ever surface for an actor not authorized to see it? Computed
+by [`src/scoring.rs`](src/scoring.rs) (`is_authorized`, `leak_rate`,
+`zero_leak_upper_bound_95` — the rule-of-three bound for a zero-leak claim).
+Org-scoped memories are shared; user- and agent-scoped memories are private
+to that exact actor, including the case where a user and an agent happen to
+share an id.
+
+### 4. Tokens vs. cycles (planned, not implemented)
+
+<img src="assets/plots/token-usage-vs-cycles.svg" alt="Design hypothesis chart: tokens injected per cycle vs. an open-ended, log-scaled cycle count, comparing full context, bounded window, static RAG, and a learning ACT-R system" width="560">
+
+The question this is meant to answer: across many query-inference cycles,
+does a system that learns from use end up consuming fewer total tokens than
+one that doesn't — not just on one call, but durably, as the horizon of
+cycles keeps extending? Four architectures, same question:
+
+- **Full context** — every query re-sends the whole history. Tokens grow
+  without bound as history grows.
+- **Bounded window** — a fixed context size; old material falls off.
+  Tokens stay flat, but nothing says accuracy does too.
+- **Static RAG** (today's `verbatim`/`bm25`/`recency` baselines) — tokens
+  stay bounded by top-k regardless of history size, with no learning signal.
+- **Learning (ACT-R)** — the hypothesis under test: a calibrated system
+  knows when it's confident, so it can stop at a small top-k instead of
+  padding it, and the curve should stay flat or decline as that confidence
+  sharpens with use.
+
+"Durable" means the curve has to hold under replicates, not erode as noise
+accumulates in the store, and recover after a fact change — the same
+stability battery above, pointed at a token signal instead of a correctness
+signal. This axis has no code yet: no token counter, no `FullContext` or
+`BoundedWindow` baseline, no checkpointed runner. It's listed here as the
+design this repository is building toward, not a result.
+
 ## Positioning
 
 LoCoMo remains useful as a regression test for long-term recall.
