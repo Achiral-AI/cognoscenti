@@ -35,12 +35,13 @@ Support the development of cognitive memory benchmarks and help shape the future
 
 ## Implementation
 
-Cognoscenti is implemented in Rust and provides a comprehensive framework for benchmarking cognitive memory architectures. The implementation includes:
-
-- **Workload Simulation**: Generate synthetic team interactions (founders, engineers, designers, customers, investors) over configurable time periods
-- **Core Evaluation Dimensions**: Measure activation precision, selective forgetting, interference resistance, contextual recall, memory consolidation, adaptation, and efficiency
-- **Metrics Collection**: Automated collection and analysis of benchmark metrics with statistical computations
-- **Visualization**: Generate plots and export results to JSON/CSV for further analysis
+Cognoscenti is implemented in Rust. Today it evaluates memory systems against
+a JSONL set of benchmark items: each item carries a query, a gold memory, and
+distractors, and a configured system is scored on whether it retrieves the
+gold memory and ignores the distractors. This README describes only what is
+implemented today; a rebuild toward a simulated-time event stream, an ACT-R
+reference implementation, and stability metrics across repeated runs is in
+progress.
 
 ## Installation
 
@@ -55,40 +56,8 @@ cargo build --release
 
 ## Usage
 
-Run the benchmark with default settings:
-
-```bash
-cargo run --release
-```
-
-Or customize the benchmark parameters:
-
-```bash
-cargo run --release -- \
-  --workload technical \
-  --duration-months 6 \
-  --retrieval-count 1000 \
-  --output-dir ./results
-```
-
-### Available Workloads
-
-Each workload generates synthetic data patterns to test specific cognitive memory properties:
-
-- `strategic`: High-level decision patterns with infrequent but high-importance memories (tests selective forgetting and activation precision)
-- `technical`: Frequent repetitive interactions with evolving technical context (tests memory consolidation and adaptation)
-- `creative`: Varied contextual patterns with cross-domain references (tests contextual recall and interference resistance)
-- `episodic`: Short-lived interaction patterns requiring rapid forgetting (tests decay rates and junk activation)
-- `analytical`: Precision-focused patterns with strict accuracy requirements (tests retrieval efficiency and top-k accuracy)
-
-### Output
-
-The benchmark generates:
-
-- `benchmark_results.json`: Complete metrics in JSON format
-- `benchmark_metrics.csv`: Metrics in CSV format for easy analysis
-- `metrics_overview.png`: Visual overview of benchmark results
-- `benchmark_report.pdf`: Printable report with headline metrics
+Cognoscenti has one mode: evaluate one or more memory systems against a JSONL
+file of benchmark items. `--items-file` is required.
 
 ### Memory Tool Eval Reports
 
@@ -128,44 +97,19 @@ The memory-tool eval generates:
 - `memory_eval_metrics.csv`: Comparison-ready metric table
 - `memory_eval_report.pdf`: Printable comparison report
 
-## Published Organizational Memory Run
+## Organizational Memory Run (2026-08-02) — superseded
 
-The first public organizational-memory run compares three reference architectures on the same JSONL workload:
+The first public organizational-memory run reported 91.67% Top-1 accuracy for
+an `organic-memory` baseline. That number does not measure Achiral or any
+real memory system: `organic-memory` was a local keyword scorer that read
+words like "validated" and "superseded" written directly into the benchmark
+item text. The `organic-memory`/`achiral` alias and its keyword heuristic
+have been removed from Cognoscenti. See
+[`results/organizational-memory-2026-08-02/README.md`](results/organizational-memory-2026-08-02/README.md)
+for the full explanation and the original artifacts, kept for transparency.
 
-- `rag`: lexical retrieval over stored memories.
-- `agent-memory`: lexical retrieval plus project, domain, and conversation scope.
-- `organic-memory`: scoped retrieval plus lifecycle signals for current, validated, reinforced, stale, superseded, and low-signal memories.
-
-Run date: 2026-08-02
-
-Public report: [Organizational Memory Benchmark: RAG vs Agent Memory vs Organic Memory](https://achiral.ai/benchmarks/ai-memory-benchmark)
-
-Release notes: [2026-08-02 AI Memory Benchmark Run](docs/releases/2026-08-02-ai-memory-benchmark.md)
-
-| System | Top-1 Accuracy | Recall@3 | Precision@3 | Distractor Activation |
-| --- | ---: | ---: | ---: | ---: |
-| RAG reference baseline | 50.00% | 83.33% | 27.78% | 25.00% |
-| Agent-memory reference baseline | 75.00% | 100.00% | 33.33% | 38.89% |
-| Organic-memory reference baseline | 91.67% | 100.00% | 33.33% | 16.67% |
-
-Reproduce the run:
-
-```bash
-cargo run --release -- \
-  --items-file examples/organizational_memory.jsonl \
-  --systems rag,agent-memory,organic-memory \
-  --top-k 3 \
-  --output-dir results/organizational-memory-2026-08-02
-```
-
-Artifacts:
-
-- [`examples/organizational_memory.jsonl`](examples/organizational_memory.jsonl)
-- [`results/organizational-memory-2026-08-02/README.md`](results/organizational-memory-2026-08-02/README.md)
-- [`results/organizational-memory-2026-08-02/memory_eval_results.json`](results/organizational-memory-2026-08-02/memory_eval_results.json)
-- [`results/organizational-memory-2026-08-02/memory_eval_metrics.csv`](results/organizational-memory-2026-08-02/memory_eval_metrics.csv)
-
-This run does not claim to benchmark Mem0, Zep, Letta, Glean, LangGraph, or any other vendor product. Vendor adapters exist through Cognoscenti's HTTP eval mode, but vendor results should be published only when endpoints, keys, seeds, commands, and raw outputs are recorded.
+This repository does not currently publish a result comparing Achiral, or any
+vendor, on Cognoscenti.
 
 ## Citing Cognoscenti
 
@@ -298,50 +242,12 @@ Unlike traditional memory benchmarks that focus on **persistence and total recal
 While existing benchmarks answer "Can you retrieve this fact?", Cognoscenti asks "Should this memory come to mind right now?" — making it uniquely suited for evaluating ACT-R-inspired and other emergent memory systems.
 
 
-## Core Evaluation Dimensions
-
-### Activation
-
-Does the most relevant memory become active when needed? - Top-1
-retrieval accuracy - Irrelevant memory activation - Retrieval latency
-
-### Selective Forgetting
-
-Does unimportant information fade? - Junk activation rate - Retrieval
-precision - Forgotten-memory ratio
-
-### Interference Resistance
-
-Can similar memories be distinguished? - Top-1 / Top-3 accuracy -
-Distractor count - Retrieval confidence
-
-### Contextual Recall
-
-Does context influence retrieval? Examples include switching between
-engineering, marketing, finance, or design discussions.
-
-### Memory Consolidation
-
-Do repeated experiences become easier to retrieve over time?
-
-### Adaptation
-
-Does newer information correctly supersede outdated beliefs while
-preserving historical context?
-
-### Efficiency
-
-Does retrieval remain selective and fast as total memory grows? Possible
-metrics: - Memories examined - Activated chunks - Retrieval latency -
-Token cost
-
-## Suggested Workloads
-
-Rather than isolated question-answer pairs, simulate long-running
-teams: - Founders - Engineers - Designers - Customers - Investors
-
-Generate months of meetings, chats, documents, roadmaps, bugs, and
-changing project priorities.
+These are the properties Cognoscenti aims to measure — activation precision,
+selective forgetting, interference resistance, contextual recall, memory
+consolidation, adaptation, and efficiency — but today's JSONL item eval only
+covers activation-style retrieval (Top-1, recall@k, precision@k, distractor
+activation) against a single frozen set of items, asked once. It does not yet
+measure forgetting, consolidation, or adaptation as behavior over time.
 
 ## Positioning
 

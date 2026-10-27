@@ -191,10 +191,6 @@ fn build_system(system_name: &str) -> Result<Box<dyn CognitiveMemorySystem>> {
             "agent-memory",
             ScoringMode::AgentMemory,
         ))),
-        "organic" | "organic-memory" | "achiral" => Ok(Box::new(LocalMemorySystem::new(
-            "organic-memory",
-            ScoringMode::OrganicMemory,
-        ))),
         "mem0" | "supermemory" | "zep" | "letta" => {
             Ok(Box::new(HttpMemorySystem::from_env(system_name)?))
         }
@@ -485,7 +481,6 @@ enum ScoringMode {
     Local,
     Rag,
     AgentMemory,
-    OrganicMemory,
 }
 
 impl LocalMemorySystem {
@@ -668,7 +663,6 @@ fn score_memory(query: &str, context: &Context, chunk: &MemoryChunk, mode: Scori
     let query_terms = normalized_terms(query);
     let content_terms = normalized_terms(&chunk.content);
     let overlap = query_terms.intersection(&content_terms).count() as f64;
-    let content = chunk.content.to_ascii_lowercase();
     let domain_bonus = if context.domain == chunk.context.domain {
         0.25
     } else {
@@ -691,45 +685,7 @@ fn score_memory(query: &str, context: &Context, chunk: &MemoryChunk, mode: Scori
         ScoringMode::Rag => overlap,
         ScoringMode::Local => overlap + domain_bonus + chunk.importance,
         ScoringMode::AgentMemory => overlap + domain_bonus + project_bonus + conversation_bonus,
-        ScoringMode::OrganicMemory => {
-            let lifecycle_bonus = lifecycle_signal(&content);
-            overlap + domain_bonus + project_bonus + conversation_bonus + lifecycle_bonus
-        }
     }
-}
-
-fn lifecycle_signal(content: &str) -> f64 {
-    let mut score = 0.0;
-
-    for marker in [
-        "validated",
-        "current",
-        "reinforced",
-        "approved",
-        "reused",
-        "high-signal",
-        "latest",
-    ] {
-        if content.contains(marker) {
-            score += 0.65;
-        }
-    }
-
-    for marker in [
-        "stale",
-        "superseded",
-        "deprecated",
-        "outdated",
-        "low-signal",
-        "ignore",
-        "historical only",
-    ] {
-        if content.contains(marker) {
-            score -= 0.85;
-        }
-    }
-
-    score
 }
 
 fn normalized_terms(text: &str) -> HashSet<String> {
@@ -911,5 +867,19 @@ mod tests {
             parse_systems("local, mem0,zep"),
             vec!["local", "mem0", "zep"]
         );
+    }
+
+    #[test]
+    fn achiral_alias_and_lifecycle_keyword_heuristic_are_gone() {
+        // "achiral"/"organic"/"organic-memory" used to alias to a local scorer
+        // that read "validated"/"superseded" markers written into the dataset
+        // itself, and reported a result that did not measure Achiral at all.
+        // Nothing should claim to evaluate "achiral" locally any more.
+        for name in ["achiral", "organic", "organic-memory"] {
+            assert!(
+                build_system(name).is_err(),
+                "{name} should no longer resolve to a local system"
+            );
+        }
     }
 }
