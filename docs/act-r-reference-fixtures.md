@@ -45,14 +45,26 @@ Model: `F = .63`, `S (:mas) = 1.6`, `B_i = 0` for all chunks.
 - `A = 0.5*0.907 + 0.5*0.907 = 0.907`
 - `Time = .63 * e^(-0.907) = 0.254s`; total RT = **1.084s**
 
-**"The hippie is in the bank"** (fan(hippie) = 4, fan(bank) = 2):
+**"The hippie is in the bank"** (fan(hippie) = 4; the tutorial's prose
+labels fan(bank) = 2, but its own printed trace is only consistent with
+fan(bank) = 3 - see Gaps below; the implementation and its tests use the
+verified trace numbers, not the prose label):
 - `S(hippie) = 1.6 - ln(4) = 0.21370563888010952`
-- `S(bank) = 1.6 - ln(2) = 0.5013877113318902`
+- `S(bank) = 1.6 - ln(3) = 0.5013877113318902` (matches the printed `0.501`; `1.6 - ln(2) = 0.907` does not)
 - `A = 0.5*0.214 + 0.5*0.501 = 0.358`
 - `Time = .63 * e^(-0.358) = 0.441s`
 
 ## Gaps (explicitly not filled with invented numbers)
 
+- **fan(bank) discrepancy, found implementing the fixture.** The tutorial
+  excerpt's own prose says fan(bank) = 2, but its printed trace values
+  (S = 0.501, A = 0.358, RT = 0.441s) only reproduce from `1.6 - ln(3)`,
+  not `1.6 - ln(2) = 0.907`. Either the prose mislabels the fan count, or
+  a detail of the example (a second sentence referencing "bank", a extra
+  slot) isn't visible in the excerpt. The code and its tests trust the
+  verified printed trace over the prose label. Re-check against the full
+  tutorial PDF before citing fan(bank) = 2 or = 3 anywhere outside this
+  codebase.
 - No source gives raw presentation times `t_j` → a stated numeric `B_i`
   (only n, d, and the result, in Fixture 1).
 - No source gives a numeric `(A, τ, s) → P` worked example — only the
