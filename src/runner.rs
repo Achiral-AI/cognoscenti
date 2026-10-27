@@ -20,6 +20,13 @@ pub struct BenchmarkConfig {
     /// Number of retrieved memories to evaluate per query
     #[clap(long, default_value = "3")]
     pub top_k: usize,
+
+    /// Seed for every source of randomness Cognoscenti itself introduces
+    /// (stream generation, replicate ordering, ACT-R retrieval noise).
+    /// Recorded in the run manifest regardless of whether the current run
+    /// uses any randomness.
+    #[clap(long, default_value = "0")]
+    pub seed: u64,
 }
 
 /// Runs a memory-system evaluation against a JSONL benchmark item file.
@@ -47,7 +54,7 @@ mod tests {
 
     #[test]
     fn runner_construction_never_simulates_anything() {
-        // No workload, no RNG, no canned content: constructing a runner is just
+        // No workload, no canned content: constructing a runner is just
         // holding the config until `run()` is asked to do real work.
         let config = BenchmarkConfig::parse_from(["cognoscenti"]);
         assert!(BenchmarkRunner::new(config).is_ok());

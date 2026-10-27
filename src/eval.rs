@@ -1,4 +1,5 @@
 use crate::core::{Context, MemoryChunk, RetrievalResult};
+use crate::manifest::RunManifest;
 use crate::runner::BenchmarkConfig;
 use anyhow::{Context as AnyhowContext, Result};
 use chrono::Utc;
@@ -84,9 +85,10 @@ pub fn run_memory_eval(config: &BenchmarkConfig) -> Result<MemoryEvalReport> {
     let output_path = PathBuf::from(&config.output_dir);
     fs::create_dir_all(&output_path)?;
 
+    let systems = parse_systems(&config.systems);
     let mut reports = Vec::new();
-    for system_name in parse_systems(&config.systems) {
-        reports.push(evaluate_system(&system_name, &items, config.top_k));
+    for system_name in &systems {
+        reports.push(evaluate_system(system_name, &items, config.top_k));
     }
 
     let report = MemoryEvalReport {
@@ -95,6 +97,10 @@ pub fn run_memory_eval(config: &BenchmarkConfig) -> Result<MemoryEvalReport> {
         top_k: config.top_k,
         systems: reports,
     };
+
+    let manifest =
+        RunManifest::build(items_file, items.len(), &systems, config.top_k, config.seed)?;
+    manifest.write(&output_path)?;
 
     save_eval_report(&output_path, &report)?;
     print_eval_report(&report);
