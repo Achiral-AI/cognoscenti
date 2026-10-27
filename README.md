@@ -35,13 +35,29 @@ Support the development of cognitive memory benchmarks and help shape the future
 
 ## Implementation
 
-Cognoscenti is implemented in Rust. Today it evaluates memory systems against
-a JSONL set of benchmark items: each item carries a query, a gold memory, and
-distractors, and a configured system is scored on whether it retrieves the
-gold memory and ignores the distractors. This README describes only what is
-implemented today; a rebuild toward a simulated-time event stream, an ACT-R
-reference implementation, and stability metrics across repeated runs is in
-progress.
+Cognoscenti is implemented in Rust, as two separate modes:
+
+- **JSONL item eval** (original mode): each item carries a query, a gold
+  memory, and distractors; a configured system is scored on whether it
+  retrieves the gold memory and ignores the distractors. See "Memory Tool
+  Eval Reports" below.
+- **Stream eval** (current build-out, Plan 25): a chronologically ordered
+  JSONL event/question stream (`src/stream.rs`), a dataset lint
+  (`src/lint.rs`), an ACT-R reference (`src/actr.rs`: base-level activation,
+  fan effect, logistic retrieval probability and noise), calibration
+  (`src/calibration.rs`: reliability curves, Brier score, ECE, native or
+  derived from a raw score), scoring (`src/scoring.rs`: recall@k, scope-based
+  leak rate), five stability tests (`src/stability.rs`: run-to-run,
+  order sensitivity, paraphrase robustness, stability against plasticity,
+  lock-in), and baseline adapters (`src/baselines.rs`: verbatim, BM25,
+  recency, full-context, bounded-window) replayed through a deterministic,
+  seeded harness (`src/determinism.rs`, `src/manifest.rs`) via
+  `--replay-stream`. See "Stream Eval (ACT-R reference, baselines, token
+  accounting)" below.
+
+No vendor or Achiral comparison has been run on the stream eval yet; see
+"Organizational Memory Run (2026-08-02) — superseded" below for why the one
+public number this repository ever published doesn't count.
 
 ## Installation
 
@@ -97,6 +113,45 @@ The memory-tool eval generates:
 - `memory_eval_metrics.csv`: Comparison-ready metric table
 - `memory_eval_report.pdf`: Printable comparison report
 
+### Stream Eval (ACT-R reference, baselines, token accounting)
+
+Lint a stream dataset (six checks, including that no item's content leaks
+its own gold answer) and fail nonzero if any issue is found:
+
+```bash
+cargo run --release -- --lint-stream path/to/stream.jsonl
+```
+
+Replay a stream through a baseline and report recall@k and tokens injected
+per question. `--systems` is one of `verbatim`, `bm25`, `recency`,
+`full-context`, or `bounded-window`:
+
+```bash
+cargo run --release -- \
+  --replay-stream path/to/stream.jsonl \
+  --systems bm25 \
+  --top-k 3 \
+  --seed 0
+```
+
+`--recency-half-life-days` (default 30) configures `recency`;
+`--bounded-window-size` (default 20) configures `bounded-window`.
+
+Measure how tokens injected per question changes as ingested history grows,
+at open-ended geometric checkpoints (10, 100, 1000, ...) instead of one run:
+
+```bash
+cargo run --release -- \
+  --replay-stream path/to/stream.jsonl \
+  --systems full-context,bounded-window,bm25 \
+  --cycles 1000
+```
+
+This is read-path token accounting only (`src/tokens.rs`): what a query
+would inject into a model's context, approximated by word count, not a
+real tokenizer. No live run has been published from this yet — see
+"Tokens vs. cycles" under Measurement framework below.
+
 ## Organizational Memory Run (2026-08-02) — superseded
 
 The first public organizational-memory run reported 91.67% Top-1 accuracy for
@@ -128,7 +183,7 @@ Software Heritage source archive: [`swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c
   author = {{Achiral AI}},
   title = {Cognoscenti: A Benchmark for Trustworthy AI Memory},
   year = {2026},
-  version = {0.2.1},
+  version = {0.2.0},
   doi = {10.5281/zenodo.21995304},
   url = {https://github.com/Achiral-AI/cognoscenti}
 }
@@ -242,20 +297,13 @@ Unlike traditional memory benchmarks that focus on **persistence and total recal
 While existing benchmarks answer "Can you retrieve this fact?", Cognoscenti asks "Should this memory come to mind right now?" — making it uniquely suited for evaluating ACT-R-inspired and other emergent memory systems.
 
 
-These are the properties Cognoscenti aims to measure — activation precision,
-selective forgetting, interference resistance, contextual recall, memory
-consolidation, adaptation, and efficiency — but today's JSONL item eval only
-covers activation-style retrieval (Top-1, recall@k, precision@k, distractor
-activation) against a single frozen set of items, asked once. It does not yet
-measure forgetting, consolidation, or adaptation as behavior over time.
-
 ## Measurement framework
 
 Trustworthy memory, for Cognoscenti, is tested on three axes: does its stated
 confidence mean anything (calibration), does it agree with itself when
 repeated (stability), and does it respect the boundaries it's told (scope).
-A fourth, planned axis asks what it costs: does a system that learns from use
-need fewer tokens per query over time than one that doesn't.
+A fourth axis asks what it costs: does a system that learns from use need
+fewer tokens per query over time than one that doesn't.
 
 **Every diagram below is a schematic of what the code computes, not a
 measured result.** Nothing in this repository has been run against a live
@@ -296,7 +344,7 @@ Org-scoped memories are shared; user- and agent-scoped memories are private
 to that exact actor, including the case where a user and an agent happen to
 share an id.
 
-### 4. Tokens vs. cycles (planned, not implemented)
+### 4. Tokens vs. cycles (implemented, not yet measured)
 
 <img src="assets/plots/token-usage-vs-cycles.svg" alt="Design hypothesis chart: tokens injected per cycle vs. an open-ended, log-scaled cycle count, comparing full context, bounded window, static RAG, and a learning ACT-R system" width="560">
 
@@ -305,12 +353,12 @@ does a system that learns from use end up consuming fewer total tokens than
 one that doesn't — not just on one call, but durably, as the horizon of
 cycles keeps extending? Four architectures, same question:
 
-- **Full context** — every query re-sends the whole history. Tokens grow
-  without bound as history grows.
-- **Bounded window** — a fixed context size; old material falls off.
-  Tokens stay flat, but nothing says accuracy does too.
-- **Static RAG** (today's `verbatim`/`bm25`/`recency` baselines) — tokens
-  stay bounded by top-k regardless of history size, with no learning signal.
+- **Full context** (`FullContextSystem`) — every query re-sends the whole
+  history. Tokens grow without bound as history grows.
+- **Bounded window** (`BoundedWindowSystem`) — a fixed context size; old
+  material falls off. Tokens stay flat, but nothing says accuracy does too.
+- **Static RAG** (`verbatim`/`bm25`/`recency`) — tokens stay bounded by
+  top-k regardless of history size, with no learning signal.
 - **Learning (ACT-R)** — the hypothesis under test: a calibrated system
   knows when it's confident, so it can stop at a small top-k instead of
   padding it, and the curve should stay flat or decline as that confidence
@@ -319,9 +367,11 @@ cycles keeps extending? Four architectures, same question:
 "Durable" means the curve has to hold under replicates, not erode as noise
 accumulates in the store, and recover after a fact change — the same
 stability battery above, pointed at a token signal instead of a correctness
-signal. This axis has no code yet: no token counter, no `FullContext` or
-`BoundedWindow` baseline, no checkpointed runner. It's listed here as the
-design this repository is building toward, not a result.
+signal. The token counter (`src/tokens.rs`: `approx_token_count`,
+`geometric_checkpoints`), both new baselines, and the checkpointed
+`--cycles` runner (`token_usage_by_cycle` in `src/adapter.rs`) are built and
+tested; no live run has been executed against a real dataset yet, so the
+diagram above remains a hypothesis, not a result.
 
 ## Positioning
 
@@ -346,19 +396,6 @@ architectures such as ACT-R.
 
 Cognoscenti is licensed under the Apache License, Version 2.0. See
 `LICENSE` and `NOTICE`.
-
-## Citation
-
-If you use Cognoscenti in your research, please cite:
-
-```bibtex
-@software{cognoscenti2024,
-  title = {Cognoscenti: A Benchmark for Cognitive Memory Systems},
-  author = {Achiral},
-  year = {2024},
-  url = {https://github.com/Achiral-AI/cognoscenti}
-}
-```
 
 ## Acknowledgments
 
