@@ -22,6 +22,16 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub lint_stream: Option<String>,
 
+    /// Replay a stream dataset file through a baseline system and report
+    /// recall@k per question. Reuses --systems (one of: verbatim, bm25,
+    /// recency) and --top-k.
+    #[clap(long)]
+    pub replay_stream: Option<String>,
+
+    /// Half-life, in days, for the recency baseline's exponential decay.
+    #[clap(long, default_value = "30")]
+    pub recency_half_life_days: f64,
+
     /// Number of retrieved memories to evaluate per query
     #[clap(long, default_value = "3")]
     pub top_k: usize,

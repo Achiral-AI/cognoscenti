@@ -128,7 +128,7 @@ fn load_benchmark_items(path: &str) -> Result<Vec<BenchmarkItem>> {
     Ok(items)
 }
 
-fn parse_systems(systems: &str) -> Vec<String> {
+pub(crate) fn parse_systems(systems: &str) -> Vec<String> {
     systems
         .split(',')
         .map(str::trim)

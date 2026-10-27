@@ -1,4 +1,6 @@
 pub mod actr;
+pub mod adapter;
+pub mod baselines;
 pub mod calibration;
 pub mod core;
 pub mod determinism;
@@ -13,6 +15,8 @@ pub mod stream;
 pub use actr::{
     activation, base_level_activation, fan_strength, retrieval_probability, sample_noise,
 };
+pub use adapter::{replay_stream, run_baseline_replay, MemorySystem, QuestionResult};
+pub use baselines::{build_baseline, Bm25System, RecencySystem, VerbatimSystem};
 pub use calibration::{
     brier_score, derive_probabilities_from_scores, expected_calibration_error, reliability_curve,
     ReliabilityBin,
