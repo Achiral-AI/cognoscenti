@@ -53,9 +53,7 @@ Cognoscenti is implemented in Rust, as two separate modes:
   `--replay-stream`. See "Stream Eval (ACT-R reference, baselines, token
   accounting)" below.
 
-No vendor or Achiral comparison has been run on the stream eval yet; see
-"Organizational Memory Run (2026-08-02) — retracted" below for why the one
-public number this repository ever published doesn't count.
+No vendor or Achiral comparison has been run on the stream eval yet.
 
 ## Installation
 
@@ -150,18 +148,6 @@ This is read-path token accounting only (`src/tokens.rs`): what a query
 would inject into a model's context, approximated by word count, not a
 real tokenizer. No live run has been published from this yet — see
 "Tokens vs. cycles" under Measurement framework below.
-
-## Organizational Memory Run (2026-08-02) — retracted
-
-The first public run reported 91.67% Top-1 accuracy. The score was fake: it
-came from a scorer that read words like "validated" and "superseded" out of
-the benchmark text itself, not from any real memory system. That scorer and
-its `organic-memory`/`achiral` alias are gone from Cognoscenti. Original
-artifacts and the full writeup stay at
-[`results/organizational-memory-2026-08-02/README.md`](results/organizational-memory-2026-08-02/README.md)
-for the record.
-
-Cognoscenti has not published a result for Achiral or any vendor since.
 
 ## Citing Cognoscenti
 
@@ -271,8 +257,7 @@ fewer tokens per query over time than one that doesn't.
 
 **Every diagram below is a schematic of what the code computes, not a
 measured result.** Nothing in this repository has been run against a live
-system yet — see the "Organizational Memory Run (2026-08-02) — retracted"
-section above. A number appears on this page only once a real run backs it.
+system yet. A number appears on this page only once a real run backs it.
 
 ### 1. Trust vs. confidence (calibration)
 
