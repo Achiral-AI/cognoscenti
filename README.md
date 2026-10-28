@@ -4,6 +4,8 @@
   <img src="./assets/cognoscenti-emblem.svg" alt="Cognoscenti C mark" width="160">
 </p>
 
+> The problem isn't how much is remembered, but what gets chosen as memory.
+
 <p align="center">
   <a href="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml?query=branch%3Amain">
     <img src="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Status">
@@ -19,9 +21,11 @@
   </a>
 </p>
 
-**Cognoscenti** benchmarks **non-deterministic, probabilistic AI memory**: whether a system reliably chooses what to retain, retrieve, forget, and suppress. Most memory tools don't do this — they're deterministic storage: the same write always comes back the same way. Cognoscenti is for ACT-R-inspired **cognitive memory systems** and [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai), not for vector stores, knowledge graphs, or other tools built on that same deterministic storage.
+**Cognoscenti** is for benchmarking **probabilistic (non-deterministic) memory** for AI: whether a system reliably chooses what to retain, retrieve, forget, and suppress. Most memory benchmarking tools assume a deterministic outcome instead — the same write always comes back with the same result.
 
-> The problem isn't how much is remembered, but what gets chosen as memory.
+Cognoscenti is designed to assess [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) with architecture like ACT-R's **cognitive memory system** or SOAR's semantic and episodic memory with embedded uncertainty of loss, activation, and recall akin to the Hopfield network.
+
+This project has been sponsored by [Achiral](https://achiral.ai), an ACT-R-inspired emergent memory for teams.
 
 ---
 
@@ -213,15 +217,13 @@ cargo fmt
 
 If you find a bug or have a feature request, please open an issue on GitHub. For security vulnerabilities, please see [SECURITY.md](SECURITY.md) for our disclosure policy.
 
-
 ## Why Cognoscenti
 
-Most memory benchmarks test retrieval against deterministic storage: can
-the system pull a fact back out, the same way, every time? LoCoMo,
-LongMemEval, Needle-in-a-Haystack, InfiniteBench, and BABILong all ask some
-version of that. A system with total recall — store everything, forget
-nothing — passes easily, because there's no probability involved: the
-fact is either in the store or it isn't.
+Most memory benchmarks test retrieval: can the system pull a fact back out
+of storage? LoCoMo, LongMemEval, Needle-in-a-Haystack, InfiniteBench, and
+BABILong all ask some version of that. A system with total recall — store
+everything, forget nothing — passes easily: there's no probability
+involved, the fact is either in the store or it isn't.
 
 Cognoscenti asks a different question: should this memory come to mind
 right now? That's a test of judgment, not storage. It only makes sense for
@@ -236,7 +238,7 @@ fade. Concretely, Cognoscenti measures:
 - **Contextual recall** — does retrieval change with context the way it should?
 
 | Benchmark | Tests | Fits ACT-R-style memory? |
-|-----------|-------|---------------------------|
+| ----------- | ------- | --------------------------- |
 | LongMemEval | Long-context memory retrieval | Moderate |
 | Needle-in-a-Haystack | Retrieval under huge contexts | Low |
 | InfiniteBench | Scaling to very long contexts | Low |
