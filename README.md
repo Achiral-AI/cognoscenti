@@ -25,11 +25,9 @@
 
 ---
 
-## 💎 Sponsor Cognoscenti
+## Sponsor Cognoscenti
 
-Support the development of cognitive memory benchmarks and help shape the future of AI memory systems. [Become a sponsor](SPONSORSHIP.md) and gain visibility among thousands of AI/ML developers building the next generation of memory architectures.
-
-[📢 View Sponsorship Tiers](SPONSORSHIP.md) | [🤝 GitHub Sponsors](https://github.com/Achiral-AI) | [💬 Contact Us](mailto:sponsorships@achiral.ai)
+If you want to fund this work: [sponsorship tiers](SPONSORSHIP.md), [GitHub Sponsors](https://github.com/Achiral-AI), or [sponsorships@achiral.ai](mailto:sponsorships@achiral.ai).
 
 ---
 
