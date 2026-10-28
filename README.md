@@ -19,7 +19,7 @@
   </a>
 </p>
 
-**Cognoscenti** benchmarks **trustworthy AI memory**: how reliably a system chooses what to retain, retrieve, forget, and suppress. It's built for ACT-R-inspired **cognitive memory systems** and [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) — not for vector stores, knowledge graphs, or other systems that just persist everything and never forget.
+**Cognoscenti** benchmarks **non-deterministic, probabilistic AI memory**: whether a system reliably chooses what to retain, retrieve, forget, and suppress. Most memory tools don't do this — they're deterministic storage: the same write always comes back the same way. Cognoscenti is for ACT-R-inspired **cognitive memory systems** and [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai), not for vector stores, knowledge graphs, or other tools built on that same deterministic storage.
 
 > The problem isn't how much is remembered, but what gets chosen as memory.
 
@@ -216,10 +216,12 @@ If you find a bug or have a feature request, please open an issue on GitHub. For
 
 ## Why Cognoscenti
 
-Most memory benchmarks test retrieval: can the system pull a fact back out
-of storage? LoCoMo, LongMemEval, Needle-in-a-Haystack, InfiniteBench, and
-BABILong all ask some version of that. A system with total recall — store
-everything, forget nothing — passes easily.
+Most memory benchmarks test retrieval against deterministic storage: can
+the system pull a fact back out, the same way, every time? LoCoMo,
+LongMemEval, Needle-in-a-Haystack, InfiniteBench, and BABILong all ask some
+version of that. A system with total recall — store everything, forget
+nothing — passes easily, because there's no probability involved: the
+fact is either in the store or it isn't.
 
 Cognoscenti asks a different question: should this memory come to mind
 right now? That's a test of judgment, not storage. It only makes sense for
