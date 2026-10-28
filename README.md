@@ -1,10 +1,10 @@
 # Cognoscenti: A Benchmark for Trustworthy AI Memory
 
+> The problem isn't how much is remembered, but what gets chosen as memory.
+
 <p align="center">
   <img src="./assets/cognoscenti-emblem.svg" alt="Cognoscenti C mark" width="160">
 </p>
-
-> The problem isn't how much is remembered, but what gets chosen as memory.
 
 <p align="center">
   <a href="https://github.com/Achiral-AI/cognoscenti/actions/workflows/ci.yml?query=branch%3Amain">
@@ -21,9 +21,9 @@
   </a>
 </p>
 
-**Cognoscenti** is for benchmarking **probabilistic (non-deterministic) memory** for AI: whether a system reliably chooses what to retain, retrieve, forget, and suppress. Most memory benchmarking tools assume a deterministic outcome instead — the same write always comes back with the same result.
+**Cognoscenti** is for benchmarking **probabilistic (non-deterministic) memory** for AI: whether a system reliably chooses what to retain, retrieve, forget, and suppress.
 
-Cognoscenti is designed to assess [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) with architecture like ACT-R's **cognitive memory system** or SOAR's semantic and episodic memory with embedded uncertainty of loss, activation, and recall akin to the Hopfield network.
+Most benchmarking tools assume the opposite — a deterministic memory, where the same write always comes back with the same result. Cognoscenti is designed to assess [Emergent Memory](https://achiral.ai/blog/emergent-memory-systems) that is inherently probabilistic (Bayesian or otherwise): architectures like ACT-R's cognitive memory system or SOAR's semantic and episodic memory, with embedded uncertainty of loss, activation, and recall akin to the Hopfield network.
 
 ---
 
