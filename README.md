@@ -19,7 +19,7 @@
   </a>
 </p>
 
-**Cognoscenti** is a benchmark for **trustworthy AI memory**: memory systems that choose what to retain, retrieve, forget, and suppress with measurable reliability. It evaluates **cognitive memory systems** and [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) that are ACT-R inspired rather than tools of persistence like vector or proximity-based databases, knowledge graphs, or semantic search systems with no concept of forgetting.
+**Cognoscenti** benchmarks **trustworthy AI memory**: how reliably a system chooses what to retain, retrieve, forget, and suppress. It's built for ACT-R-inspired **cognitive memory systems** and [Emergent Memory Systems](https://achiral.ai/blog/emergent-memory-systems) like [Achiral](https://achiral.ai) — not for vector stores, knowledge graphs, or other systems that just persist everything and never forget.
 
 > The problem isn't how much is remembered, but what gets chosen as memory.
 
@@ -56,7 +56,7 @@ Cognoscenti is implemented in Rust, as two separate modes:
   accounting)" below.
 
 No vendor or Achiral comparison has been run on the stream eval yet; see
-"Organizational Memory Run (2026-08-02) — superseded" below for why the one
+"Organizational Memory Run (2026-08-02) — retracted" below for why the one
 public number this repository ever published doesn't count.
 
 ## Installation
@@ -72,8 +72,9 @@ cargo build --release
 
 ## Usage
 
-Cognoscenti has one mode: evaluate one or more memory systems against a JSONL
-file of benchmark items. `--items-file` is required.
+Cognoscenti has two eval modes, matching the two systems under Implementation
+above: the JSONL item eval (`--items-file`) and the stream eval
+(`--lint-stream` / `--replay-stream`).
 
 ### Memory Tool Eval Reports
 
@@ -152,19 +153,17 @@ would inject into a model's context, approximated by word count, not a
 real tokenizer. No live run has been published from this yet — see
 "Tokens vs. cycles" under Measurement framework below.
 
-## Organizational Memory Run (2026-08-02) — superseded
+## Organizational Memory Run (2026-08-02) — retracted
 
-The first public organizational-memory run reported 91.67% Top-1 accuracy for
-an `organic-memory` baseline. That number does not measure Achiral or any
-real memory system: `organic-memory` was a local keyword scorer that read
-words like "validated" and "superseded" written directly into the benchmark
-item text. The `organic-memory`/`achiral` alias and its keyword heuristic
-have been removed from Cognoscenti. See
+The first public run reported 91.67% Top-1 accuracy. The score was fake: it
+came from a scorer that read words like "validated" and "superseded" out of
+the benchmark text itself, not from any real memory system. That scorer and
+its `organic-memory`/`achiral` alias are gone from Cognoscenti. Original
+artifacts and the full writeup stay at
 [`results/organizational-memory-2026-08-02/README.md`](results/organizational-memory-2026-08-02/README.md)
-for the full explanation and the original artifacts, kept for transparency.
+for the record.
 
-This repository does not currently publish a result comparing Achiral, or any
-vendor, on Cognoscenti.
+Cognoscenti has not published a result for Achiral or any vendor since.
 
 ## Citing Cognoscenti
 
@@ -186,15 +185,6 @@ Software Heritage source archive: [`swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c
   version = {0.2.0},
   doi = {10.5281/zenodo.21995304},
   url = {https://github.com/Achiral-AI/cognoscenti}
-}
-
-@techreport{achiral_ai_2026_ai_memory_benchmark,
-  author = {{Achiral AI}},
-  title = {AI Memory Benchmark: What Makes Memory Trustworthy?},
-  year = {2026},
-  doi = {10.5281/zenodo.21995304},
-  url = {https://achiral.ai/benchmarks/ai-memory-benchmark},
-  note = {Public Cognoscenti benchmark report for the 2026-08-02 organizational-memory run}
 }
 
 @misc{achiral_ai_2026_cognoscenti_figshare,
@@ -240,62 +230,38 @@ cargo fmt
 If you find a bug or have a feature request, please open an issue on GitHub. For security vulnerabilities, please see [SECURITY.md](SECURITY.md) for our disclosure policy.
 
 
-## Philosophy
+## Why Cognoscenti
 
-Existing benchmarks primarily evaluate retention, long-context retrieval, or task completion. For example, LoCoMo, a traditional memory benchmarks, will primarily answer:
+Most memory benchmarks test retrieval: can the system pull a fact back out
+of storage? LoCoMo, LongMemEval, Needle-in-a-Haystack, InfiniteBench, and
+BABILong all ask some version of that. A system with total recall — store
+everything, forget nothing — passes easily.
 
-> Can the system retrieve a fact from this specific storage?
+Cognoscenti asks a different question: should this memory come to mind
+right now? That's a test of judgment, not storage. It only makes sense for
+memory systems built to forget: ACT-R-inspired and other human-like
+architectures that strengthen memories through reuse and let unused ones
+fade. Concretely, Cognoscenti measures:
 
-Such a test would likely yield a high yes and a few nos—with persistence exhibiting near total recall. There is no benchmarking available for directly evaluating **selective forgetting**, **activation**, **contextual recall**, **memory strengthening**, or **interference resistance**.
+- **Activation** — did the most relevant memory surface?
+- **Selective forgetting** — were stale or irrelevant memories dropped?
+- **Interference resistance** — can the system tell similar memories apart?
+- **Consolidation** — does repeated use make a memory easier to retrieve?
+- **Contextual recall** — does retrieval change with context the way it should?
 
-Cognoscenti instead asks:
-
-> Should this memory come to mind right now?
-
-The benchmark is intended for ACT-R-inspired and other human-like memory
-architectures that emphasize selective retrieval, strengthening through
-reuse, contextual recall, and useful forgetting. In several ways, Cognoscenti is a benchmark for cognitive memory systems inspired by human memory architectures such as ACT-R.
-
-## Why create a new benchmark?
-
-A new benchmark specifically for cognitive memory covers:
-
-- Activation precision (did the most relevant memories surface?)
-- Retrieval efficiency (how many memories had to be examined?)
-- Forgetting quality (were obsolete or irrelevant memories ignored?)
-- Interference resistance (can similar memories be distinguished?)
-- Memory strengthening (does repeated information become easier to retrieve?)
-- Temporal adaptation (does new information appropriately replace old assumptions?)
-- Contextual recall (does retrieval change appropriately with project or conversational context?)
-
-This would highlight what makes an ACT-R-inspired memory layer fundamentally different from a persistent vector store or RAG system.
-
-In other words, one wouldn't simply abandon LoCoMo–use it for regression test long-term recall, but if your goal is to demonstrate that an ACT-R system behaves more like human cognition than a database (persistence), then you'll likely need a new benchmark centered on selective remembering, useful forgetting, and efficient activation, because no current benchmark directly evaluates those properties.
-
-
-## Persistence with total recall vs. Forgetful (amnesic) emergent memory
-
-| Benchmark | Best for | Good fit for ACT-R? |
-|-----------|----------|---------------------|
+| Benchmark | Tests | Fits ACT-R-style memory? |
+|-----------|-------|---------------------------|
 | LongMemEval | Long-context memory retrieval | Moderate |
 | Needle-in-a-Haystack | Retrieval under huge contexts | Low |
 | InfiniteBench | Scaling to very long contexts | Low |
 | BABILong | Reasoning over long contexts | Moderate |
 | τ-bench | Stateful agent tasks over time | High |
-| SWE-bench | Long-running engineering tasks | High (if your users are developers) |
+| SWE-bench | Long-running engineering tasks | High, for developer-facing agents |
 
-### How Cognoscenti is Different
-
-Unlike traditional memory benchmarks that focus on **persistence and total recall**, Cognoscenti evaluates **cognitive properties** that mirror human memory systems:
-
-- **Selective Forgetting**: Measures how well the system identifies and fades irrelevant information
-- **Activation Dynamics**: Evaluates whether the most relevant memories surface at the right time
-- **Contextual Adaptation**: Tests retrieval accuracy across different conversational and project contexts
-- **Memory Consolidation**: Measures how repeated access strengthens memory retrieval
-- **Interference Resistance**: Evaluates ability to distinguish between similar memories
-
-While existing benchmarks answer "Can you retrieve this fact?", Cognoscenti asks "Should this memory come to mind right now?" — making it uniquely suited for evaluating ACT-R-inspired and other emergent memory systems.
-
+None of them test forgetting, consolidation, or contextual judgment
+directly. Cognoscenti doesn't replace them. LoCoMo still works fine as a
+regression test for long-term recall; Cognoscenti just covers what it
+doesn't.
 
 ## Measurement framework
 
@@ -307,8 +273,8 @@ fewer tokens per query over time than one that doesn't.
 
 **Every diagram below is a schematic of what the code computes, not a
 measured result.** Nothing in this repository has been run against a live
-system yet — see the "Organizational Memory Run (2026-08-02) — superseded"
-section below. A number appears on this page only once a real run backs it.
+system yet — see the "Organizational Memory Run (2026-08-02) — retracted"
+section above. A number appears on this page only once a real run backs it.
 
 ### 1. Trust vs. confidence (calibration)
 
@@ -373,30 +339,7 @@ signal. The token counter (`src/tokens.rs`: `approx_token_count`,
 tested; no live run has been executed against a real dataset yet, so the
 diagram above remains a hypothesis, not a result.
 
-## Positioning
-
-LoCoMo remains useful as a regression test for long-term recall.
-
-Cognoscenti complements it by measuring whether an AI behaves like an
-experienced teammate rather than an archive.
-
-## Proposed Tagline
-
-> Persistent memory asks: "Can you retrieve this fact?"
-
-> Cognoscenti asks: "Should this memory come to mind right now?"
-
-## Vision
-
-The long-term goal is to establish Cognoscenti as a standard benchmark
-for evaluating cognitive memory systems inspired by human memory
-architectures such as ACT-R.
-
 ## License
 
 Cognoscenti is licensed under the Apache License, Version 2.0. See
 `LICENSE` and `NOTICE`.
-
-## Acknowledgments
-
-Cognoscenti is inspired by cognitive memory architectures such as ACT-R and aims to complement existing memory benchmarks like LoCoMo by evaluating properties unique to human-like memory systems.
