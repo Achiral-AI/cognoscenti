@@ -32,6 +32,18 @@ pub struct BenchmarkConfig {
     #[clap(long, default_value = "30")]
     pub recency_half_life_days: f64,
 
+    /// Window size, in events, for the bounded-window baseline.
+    #[clap(long, default_value = "20")]
+    pub bounded_window_size: usize,
+
+    /// Repeat the replayed stream this many times, reporting mean tokens
+    /// injected per question at geometric checkpoints (10, 100, 1000, ...)
+    /// up to this count - the "durable horizon" token-savings signal
+    /// (Plan 25): a shape that holds as cycles grow, not a one-run number.
+    /// Only used with `--replay-stream`.
+    #[clap(long, default_value = "1")]
+    pub cycles: usize,
+
     /// Number of retrieved memories to evaluate per query
     #[clap(long, default_value = "3")]
     pub top_k: usize,

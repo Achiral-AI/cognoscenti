@@ -1,13 +1,18 @@
-# ACT-R worked examples for the reference-module tests
+# ACT-R literature fixtures for `src/actr.rs`
 
 Verified against primary sources (ACT-R 7.x Reference Manual, Dan Bothell,
 CMU; ACT-R tutorials Unit 4/Unit 5) via the Wayback Machine, since
 `act-r.psy.cmu.edu` is unreachable from this environment. Use these as
 hard-coded fixtures in the ACT-R reference module's unit tests — do not
-invent additional "from the literature" numbers; the manual gives no worked
-example pairing raw presentation times with a computed `B_i`, and no worked
-numeric retrieval-probability example exists in any source checked (see
-Gaps below).
+invent additional "from the literature" numbers.
+
+These fixtures only cover `fan_strength` (Fixtures 1 and 2 below) - the one
+function in `src/actr.rs` with a published worked example behind it. No
+primary source checked gives a worked numeric example for
+`base_level_activation`, `retrieval_probability`, or `sample_noise`; their
+tests in `src/actr.rs` instead check closed-form identities (e.g. `P = 0.5`
+at `τ = A_i`) and statistical properties (noise mean/variance over many
+draws), not literature fixtures. See Gaps below for what's missing and why.
 
 ## Equations (Reference Manual, p.292–296)
 

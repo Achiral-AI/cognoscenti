@@ -11,12 +11,18 @@ pub mod runner;
 pub mod scoring;
 pub mod stability;
 pub mod stream;
+pub mod tokens;
 
 pub use actr::{
     activation, base_level_activation, fan_strength, retrieval_probability, sample_noise,
 };
-pub use adapter::{replay_stream, run_baseline_replay, MemorySystem, QuestionResult};
-pub use baselines::{build_baseline, Bm25System, RecencySystem, VerbatimSystem};
+pub use adapter::{
+    replay_stream, run_baseline_replay, token_usage_by_cycle, MemorySystem, QuestionResult,
+};
+pub use baselines::{
+    build_baseline, Bm25System, BoundedWindowSystem, FullContextSystem, RecencySystem,
+    VerbatimSystem,
+};
 pub use calibration::{
     brier_score, derive_probabilities_from_scores, expected_calibration_error, reliability_curve,
     ReliabilityBin,
@@ -36,3 +42,4 @@ pub use stream::{
     Actor, ActorKind, Scope, ScopeKind, Stream, StreamEvent, StreamItem, StreamQuestion,
     ValidityWindow,
 };
+pub use tokens::{approx_token_count, geometric_checkpoints};

@@ -15,15 +15,23 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 
-/// Builds a baseline by name: "verbatim", "bm25", or "recency" (with
-/// `recency_half_life_days` as its half-life; ignored by the other two).
-pub fn build_baseline(name: &str, recency_half_life_days: f64) -> Result<Box<dyn MemorySystem>> {
+/// Builds a baseline by name: "verbatim", "bm25", "recency" (with
+/// `recency_half_life_days` as its half-life), "full-context", or
+/// "bounded-window" (with `bounded_window_size` as its window). Each
+/// ignores the parameters that don't apply to it.
+pub fn build_baseline(
+    name: &str,
+    recency_half_life_days: f64,
+    bounded_window_size: usize,
+) -> Result<Box<dyn MemorySystem>> {
     match name {
         "verbatim" => Ok(Box::new(VerbatimSystem::new())),
         "bm25" => Ok(Box::new(Bm25System::new())),
         "recency" => Ok(Box::new(RecencySystem::new(recency_half_life_days))),
+        "full-context" => Ok(Box::new(FullContextSystem::new())),
+        "bounded-window" => Ok(Box::new(BoundedWindowSystem::new(bounded_window_size))),
         _ => Err(anyhow::anyhow!(
-            "unknown baseline: {name} (expected verbatim, bm25, or recency)"
+            "unknown baseline: {name} (expected verbatim, bm25, recency, full-context, or bounded-window)"
         )),
     }
 }
@@ -240,6 +248,77 @@ impl MemorySystem for RecencySystem {
     }
 }
 
+/// Injects the entire ingested history into every retrieval, regardless of
+/// the query or `top_k` - the "full context" architecture: correctness is
+/// trivially perfect (everything is always in context), and the whole
+/// point is to isolate what that costs in tokens as history grows
+/// (Plan 25's fourth axis), not to rank anything.
+pub struct FullContextSystem {
+    events: Vec<String>,
+}
+
+impl FullContextSystem {
+    pub fn new() -> Self {
+        Self { events: Vec::new() }
+    }
+}
+
+impl Default for FullContextSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MemorySystem for FullContextSystem {
+    fn name(&self) -> &str {
+        "full-context"
+    }
+
+    fn ingest(&mut self, event: &StreamEvent) {
+        self.events.push(event.id.clone());
+    }
+
+    fn retrieve(&mut self, _query: &str, _now: DateTime<Utc>, _top_k: usize) -> Vec<String> {
+        self.events.clone()
+    }
+}
+
+/// Injects only the most recently ingested `window_size` events into every
+/// retrieval, regardless of the query - a flat, bounded token cost bought
+/// by dropping everything older than the window, whether or not it was
+/// ever actually needed again.
+pub struct BoundedWindowSystem {
+    window_size: usize,
+    events: std::collections::VecDeque<String>,
+}
+
+impl BoundedWindowSystem {
+    pub fn new(window_size: usize) -> Self {
+        assert!(window_size > 0, "window size must be positive");
+        Self {
+            window_size,
+            events: std::collections::VecDeque::new(),
+        }
+    }
+}
+
+impl MemorySystem for BoundedWindowSystem {
+    fn name(&self) -> &str {
+        "bounded-window"
+    }
+
+    fn ingest(&mut self, event: &StreamEvent) {
+        if self.events.len() == self.window_size {
+            self.events.pop_front();
+        }
+        self.events.push_back(event.id.clone());
+    }
+
+    fn retrieve(&mut self, _query: &str, _now: DateTime<Utc>, _top_k: usize) -> Vec<String> {
+        self.events.iter().cloned().collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,6 +406,28 @@ mod tests {
             2,
         );
         assert_eq!(retrieved, vec!["new", "old"]);
+    }
+
+    #[test]
+    fn full_context_returns_the_entire_history_regardless_of_top_k() {
+        let mut system = FullContextSystem::new();
+        system.ingest(&event("e1", "a", "2026-01-01T00:00:00Z"));
+        system.ingest(&event("e2", "b", "2026-01-02T00:00:00Z"));
+        system.ingest(&event("e3", "c", "2026-01-03T00:00:00Z"));
+
+        let retrieved = system.retrieve("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 1);
+        assert_eq!(retrieved, vec!["e1", "e2", "e3"]);
+    }
+
+    #[test]
+    fn bounded_window_keeps_only_the_most_recently_ingested_events() {
+        let mut system = BoundedWindowSystem::new(2);
+        system.ingest(&event("e1", "a", "2026-01-01T00:00:00Z"));
+        system.ingest(&event("e2", "b", "2026-01-02T00:00:00Z"));
+        system.ingest(&event("e3", "c", "2026-01-03T00:00:00Z"));
+
+        let retrieved = system.retrieve("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 10);
+        assert_eq!(retrieved, vec!["e2", "e3"]);
     }
 
     #[test]
