@@ -21,13 +21,21 @@
   </a>
 </p>
 
-**Cognoscenti** is for benchmarking **probabilistic (non-deterministic) memory** for AI: whether a system reliably chooses what to retain, retrieve, forget, and suppress.
+## Introduction
 
-**Memory is not a database, vector store, or a knowledge graph with simple CRUD mechanics.** Those systems can provide the underlying storage, which is inherently deterministic, but memory is the adaptive process or machinery that decides what to retain, strengthen, retrieve, suppress, and forget over time, and then use that information to influence future model behavior.
+**Cognoscenti** is benchmarking **probabilistic memory** for AI: whether a non-deterministic experience contextualization system reliably chooses what to retain, retrieve, forget, and suppress.
 
-Many existing memory benchmarks emphasize deterministic retrieval: whether previously supplied information can be recovered correctly. Cognoscenti instead evaluates probabilistic memory behavior, including what a system retains, retrieves, forgets, and suppresses. It is designed to assess [Emergent Memory](https://achiral.ai/blog/emergent-memory-systems) that is inherently probabilistic, Bayesian or otherwise.
+In plain terms, memory is not a database, vector store, or a knowledge graph with simple CRUD mechanics under the hood. Those tools can provide the underlying storage, which is inherently deterministic, and aid memory, but memory itself is likely closer to a Hopfield Network than a storage primitive. It is an adaptive process or machinery that decides the "current" i.e., what to retain, strengthen, retrieve, suppress, and forget over time, and then use that meshed overlapping **Context of Reality (CoR)** to influence the future behavior of a model.
 
-For language-model memory systems, Cognoscenti also tracks the approximate number of tokens injected into the model's context per question and across repeated cycles, so memory efficiency can be evaluated alongside retrieval quality.
+Nearly every existing memory benchmark emphasizes deterministic retrieval: whether previously supplied information can be recalled perfectly. Cognoscenti, on the other hand, measures memory behavior along three axes of trustworthiness, itself a score with an indeterminate beginning (meaning no trust or mistrust):
+
+1. **Calibration** — does its stated confidence mean anything?
+2. **Stability** — does it agree with itself when repeated?
+3. **Scope** — does it respect the boundaries it's told?
+
+Cognoscenti is designed to assess [Emergent Memory](https://achiral.ai/blog/emergent-memory-systems) that is inherently probabilistic, Bayesian or otherwise.
+
+For language-model memory systems, Cognoscenti also tracks the approximate number of enrichment tokens injected into the model's context per prompt and across repeated cycles, so memory efficiency can be evaluated alongside retrieval quality.
 
 ---
 
