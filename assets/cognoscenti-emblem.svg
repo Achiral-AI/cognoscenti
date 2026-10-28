@@ -5,4 +5,8 @@
     <g transform="matrix(0.853659,0,0,0.853659,34.6585,51.8537)">
         <circle cx="107" cy="81" r="41" style="fill:#000000;"/>
     </g>
+    <circle cx="114" cy="109" r="7" style="fill:#2D6BFF;"/>
+    <circle cx="138" cy="109" r="7" style="fill:#2E9E4F;"/>
+    <circle cx="114" cy="133" r="7" style="fill:#FFD400;"/>
+    <circle cx="138" cy="133" r="7" style="fill:#E5383B;"/>
 </svg>
