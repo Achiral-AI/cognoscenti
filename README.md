@@ -23,26 +23,21 @@
 
 **Cognoscenti** is for benchmarking **probabilistic (non-deterministic) memory** for AI: whether a system reliably chooses what to retain, retrieve, forget, and suppress.
 
-Most benchmarking tools assume the opposite — a deterministic memory, where the same write always comes back with the same result. Cognoscenti is designed to assess [Emergent Memory](https://achiral.ai/blog/emergent-memory-systems) that is inherently probabilistic (Bayesian or otherwise): architectures like ACT-R's cognitive memory system or SOAR's semantic and episodic memory, with embedded uncertainty of loss, activation, and recall akin to the Hopfield network.
+**Memory is not a database, vector store, or a knowledge graph with simple CRUD mechanics.** Those systems can provide the underlying storage, which is inherently deterministic, but memory is the adaptive process or machinery that decides what to retain, strengthen, retrieve, suppress, and forget over time, and then use that information to influence future model behavior.
+
+Many existing memory benchmarks emphasize deterministic retrieval: whether previously supplied information can be recovered correctly. Cognoscenti instead evaluates probabilistic memory behavior, including what a system retains, retrieves, forgets, and suppresses. It is designed to assess [Emergent Memory](https://achiral.ai/blog/emergent-memory-systems) that is inherently probabilistic, Bayesian or otherwise.
+
+For language-model memory systems, Cognoscenti also tracks the approximate number of tokens injected into the model's context per question and across repeated cycles, so memory efficiency can be evaluated alongside retrieval quality.
 
 ---
 
-## Why Cognoscenti
+## How it works
 
-Most memory benchmarks test for a single deterministic ground truth: right
-or wrong, no probability, no confidence. LoCoMo and Needle-in-a-Haystack
-test this as straightforward fact retrieval — insert a fact, ask for it
-back, a system with total recall passes easily. LongMemEval adds temporal
-reasoning and knowledge updates on top of retrieval. InfiniteBench and
-BABILong go further, testing reasoning and task completion over long
-context, not just retrieval. None of them ask whether a system's
-confidence in what it retrieved is actually justified.
+Cognoscenti replays a chronological stream of events and questions, allowing memory to accumulate and change over time. It then evaluates whether each retrieval was justified (score), not merely whether the retrieved information was correct.
 
-Cognoscenti asks a different question: should this memory come to mind
-right now? That's a test of judgment, not storage. It only makes sense for
-memory systems built to forget: ACT-R-inspired and other human-like
-architectures that strengthen memories through reuse and let unused ones
-fade. Concretely, Cognoscenti measures:
+Cognoscenti asks: **should this memory come to mind right now?** That is a test of judgment, not the nature of the storage primitive under the hood. The benchmark is designed for adaptive memory systems that selectively retain, strengthen, retrieve, suppress, and forget information over time, including cognitively inspired architectures such as ACT-R and Soar.
+
+Concretely, Cognoscenti measures:
 
 - **Activation** — did the most relevant memory surface?
 - **Selective forgetting** — were stale or irrelevant memories dropped?
