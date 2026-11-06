@@ -42,8 +42,8 @@ What it has not yet done:
   (`horizons.json`) and an authority hard-negative (a VP's informal
   suggestion vs. a later, explicit, documented decision) - enough to
   exercise the runner end to end, not enough questions for a believable
-  calibration or stability number. A wider fabric, and more horizons
-  (hours through a year), is still ahead.
+  calibration or stability number. See "Dataset scale-up plan" below for
+  what grows next, and in what order.
 - **Tier 2 is not started**: the full adapter contract (actor, scope,
   `answer`/`use`/`settle`, HTTP-backed vendor and Achiral systems) described
   in Plan 25 is a later phase. The current `MemorySystem` trait is a
@@ -54,3 +54,42 @@ What it has not yet done:
 - **The four Measurement framework diagrams in the README are schematics**
   of what the code computes, not measured results. A number appears there
   only once a real run backs it.
+
+## Dataset scale-up plan
+
+`atlas-01` is a seed, not a benchmark. The plan it's seeding:
+
+- **One growing stream per organization, not one dataset per horizon.**
+  A horizon (`atlas-01`'s `15d`/`30d`) is a `now` cutoff into the same
+  accumulating event log, recorded in that org's `horizons.json` - never
+  a separate, siloed file. Extending an org from 30 days to 90 adds more
+  events to its one `stream.jsonl` and a new cutoff, never a second
+  stream that silently diverges from the first.
+- **Horizons spaced geometrically, not evenly.** ACT-R's base-level
+  activation (`B_i = ln(Σ t_j^{-d})`) responds to *ratios* of elapsed
+  time, not absolute gaps: doubling elapsed time moves it by the same
+  amount whether that's 12h→24h or 180d→365d. Next rungs, in order:
+  24h, 72h, 1wk, 30d (already covered by `atlas-01`), 90d, 365d - fewer,
+  evenly log-spaced rungs rather than every rung discussed, so each one
+  can carry enough questions to mean something (see next point) instead
+  of spreading a fixed authoring budget too thin.
+- **Breadth per horizon, not just more horizons.** `atlas-01` has three
+  questions; LongMemEval ships 500, LoCoMo ~1,540-1,986 across its ten
+  conversations, and reviewers of that field still flag any slice under
+  ~100 questions as too small to trust. Each horizon needs its own
+  adequately sized set of synthetic orgs/projects/interference chains
+  before its calibration or stability numbers are worth reading - not
+  one org's timeline replayed longer.
+- **Gold labels stay architecture-neutral.** `gold_event_ids` and
+  `gold_answer` are the only ground truth a stream item carries - never a
+  baked-in activation number or decay curve. Calibration is computed from
+  whatever confidence score an adapter actually returns
+  (`retrieve_scored`, native or derived), so the same fabric scores
+  ACT-R, a recency-weighted vector store, or anything else without
+  favoring the one whose formula the dataset happened to encode.
+- **The authority hard-negative is a pattern, not a one-off.** `atlas-01`
+  has one instance (a VP's informal suggestion vs. the eng lead's later,
+  explicit, documented decision); every new org added should carry its
+  own version of it, so the fabric keeps testing whether a system lets
+  perceived seniority override an explicit, later correction, rather than
+  that being provable from a single example.
