@@ -73,9 +73,8 @@ answers tied to specific event IDs, not to memory text). This is how
 Cognoscenti measures calibration, stability, scope, and token cost — see
 the README's Measurement framework section.
 
-No example stream dataset ships in the repo yet. The three sub-chapters
-below all use the same hand-written three-line file so you can run them
-end to end. Save this as `test-stream.jsonl`:
+The three sub-chapters below all use the same hand-written three-line
+file so you can run them end to end. Save this as `test-stream.jsonl`:
 
 ```jsonl
 {"kind":"event","id":"e1","content":"Decided to use Postgres for the ledger","timestamp":"2026-01-01T00:00:00Z","actor":{"id":"alice","kind":"user"},"scope":{"kind":"org","id":"acme"},"source":"slack"}
@@ -93,6 +92,15 @@ and `source`; `supersedes` is optional. Every question needs `kind`, `id`,
 `query`, `asked_at`, `asked_by`, and `gold_event_ids`; `gold_answer` and
 `validity` are optional. File order is the canonical chronological order —
 it is never auto-sorted.
+
+For a larger worked example - one growing stream spanning 30 days, a
+plain supersession chain, and an authority hard-negative (a VP's informal
+suggestion that must not outrank a later, explicit, lower-rank
+correction) - see
+[`datasets/organizational-mesh/atlas-01/`](../datasets/organizational-mesh/atlas-01/).
+It's still small (3 questions): enough to run every command below against
+something real, not enough for a believable calibration or stability
+number yet.
 
 ### Lint
 
@@ -148,6 +156,40 @@ content, word-count approximated), then the mean across questions:
 `--bounded-window-size` (default 20) configures `bounded-window`. Pass a
 comma-separated list to `--systems` to run several baselines against the
 same stream in one command.
+
+Each candidate a baseline returns is also scored for calibration
+(`MemorySystem::retrieve_scored`), and `--replicates N` reruns a fresh
+system `N` times to report run-to-run flip rate (`stability::flip_rate`):
+
+```bash
+cargo run --release -- \
+  --replay-stream datasets/organizational-mesh/atlas-01/stream.jsonl \
+  --systems bm25 \
+  --top-k 2 \
+  --replicates 3 \
+  --calibration-bins 2
+```
+
+```
+=== bm25 ===
+  atlas-q-15d: recall@2 = 1.00, tokens injected = 51
+  auth-q-20d: recall@2 = 1.00, tokens injected = 59
+  atlas-q-30d: recall@2 = 0.00, tokens injected = 51
+  mean recall@2 over 3 question(s): 0.6667; mean tokens injected: 53.7
+  derived brier score = 0.1111; derived expected calibration error = 0.0000
+  flip rate over 3 replicate(s): 0.0000
+```
+
+(Real output from the shipped `atlas-01` dataset, not illustrative.) It's
+*derived*, not native, calibration: none of these local baselines claim a
+probability, so their raw score is converted first
+(`derive_probabilities_from_scores`) rather than treated as one directly
+— conflating the two would credit a baseline with a claim it never made.
+Flip rate is `0` here because every local baseline is deterministic; a
+noisy system (ACT-R's retrieval noise, a real vendor or Achiral adapter)
+is the point of comparison this is built to measure. With only three
+questions, the ECE above is not a meaningful number yet — see
+[`docs/implementation.md`](implementation.md#whats-pending).
 
 ### Token accounting
 

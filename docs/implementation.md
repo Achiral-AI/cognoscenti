@@ -18,7 +18,13 @@ Cognoscenti is implemented in Rust, as two separate modes:
   geometric checkpoints), and baseline adapters (`src/baselines.rs`:
   verbatim, BM25, recency, full-context, bounded-window) replayed through a
   deterministic, seeded harness (`src/determinism.rs`, `src/manifest.rs`).
-  See [`docs/usage.md`](usage.md#stream-eval) for how to run each part.
+  `--replay-stream` reports each baseline's derived Brier score and
+  expected calibration error (`MemorySystem::retrieve_scored`, a
+  confidence score alongside each ranked id - real for bm25/recency/
+  verbatim, a rank-derived fallback for full-context/bounded-window,
+  which have no confidence signal of their own), and, with
+  `--replicates`, run-to-run flip rate. See
+  [`docs/usage.md`](usage.md#stream-eval) for how to run each part.
 
 ## What's pending
 
@@ -30,11 +36,14 @@ What it has not yet done:
   references only — there is no HTTP-backed vendor adapter for the stream
   eval yet (the JSONL item eval's `mem0`/`supermemory`/`zep`/`letta`
   env-var wiring does not carry over to `--replay-stream`).
-- **No example stream dataset ships in the repo.** `examples/` only has
-  JSONL item-eval files (`memory_tools.jsonl`, `organizational_memory.jsonl`).
-  Anyone trying `--lint-stream` or `--replay-stream` has to hand-author a
-  stream file first — see the worked example in
-  [`docs/usage.md`](usage.md#stream-eval).
+- **Only one stream dataset ships so far, and it's small.**
+  [`datasets/organizational-mesh/atlas-01/`](../datasets/organizational-mesh/atlas-01/)
+  is one synthetic org's 30-day stream with 15d/30d horizon cutoffs
+  (`horizons.json`) and an authority hard-negative (a VP's informal
+  suggestion vs. a later, explicit, documented decision) - enough to
+  exercise the runner end to end, not enough questions for a believable
+  calibration or stability number. A wider fabric, and more horizons
+  (hours through a year), is still ahead.
 - **Tier 2 is not started**: the full adapter contract (actor, scope,
   `answer`/`use`/`settle`, HTTP-backed vendor and Achiral systems) described
   in Plan 25 is a later phase. The current `MemorySystem` trait is a
