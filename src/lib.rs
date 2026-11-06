@@ -17,7 +17,8 @@ pub use actr::{
     activation, base_level_activation, fan_strength, retrieval_probability, sample_noise,
 };
 pub use adapter::{
-    replay_stream, run_baseline_replay, token_usage_by_cycle, MemorySystem, QuestionResult,
+    calibration_pairs, replay_stream, replay_stream_replicated, run_baseline_replay,
+    token_usage_by_cycle, MemorySystem, QuestionResult,
 };
 pub use baselines::{
     build_baseline, Bm25System, BoundedWindowSystem, FullContextSystem, RecencySystem,

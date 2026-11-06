@@ -12,13 +12,34 @@ use crate::stream::{Stream, StreamEvent, StreamItem};
 use crate::tokens::{approx_token_count, geometric_checkpoints};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub trait MemorySystem {
     fn name(&self) -> &str;
     fn ingest(&mut self, event: &StreamEvent);
     /// Ranked event IDs, best first, at most `top_k` of them.
     fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String>;
+
+    /// `retrieve`'s ranking, each id paired with a confidence score, for
+    /// calibration (Plan 25/26: "native" calibration on a system's own
+    /// score, "derived" on anything else). Defaults to a rank-derived
+    /// score (`1 / (rank + 1)`) for a system with no real confidence
+    /// signal of its own; a system that already computes one (bm25,
+    /// recency, an HTTP-backed vendor/Achiral adapter) overrides this to
+    /// return it, so native calibration measures something real rather
+    /// than a position in a list.
+    fn retrieve_scored(
+        &mut self,
+        query: &str,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
+        self.retrieve(query, now, top_k)
+            .into_iter()
+            .enumerate()
+            .map(|(rank, id)| (id, 1.0 / (rank as f64 + 1.0)))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +53,21 @@ pub struct QuestionResult {
     /// 25) - what ingestion itself costs is a separate, write-path concern
     /// this does not measure.
     pub tokens_injected: usize,
+    /// Every retrieved candidate paired with its confidence score, in the
+    /// same order as `retrieved_ids` - calibration's raw input once
+    /// matched against `gold_event_ids` (see `calibration_pairs`).
+    pub scored_candidates: Vec<(String, f64)>,
+}
+
+/// Turns a question's `scored_candidates` into the `(score, was_gold)`
+/// pairs `calibration.rs`'s functions take directly.
+pub fn calibration_pairs(result: &QuestionResult, gold_event_ids: &[String]) -> Vec<(f64, bool)> {
+    let gold: HashSet<&str> = gold_event_ids.iter().map(String::as_str).collect();
+    result
+        .scored_candidates
+        .iter()
+        .map(|(id, score)| (*score, gold.contains(id.as_str())))
+        .collect()
 }
 
 /// Replays a stream through `system` in its canonical chronological order:
@@ -55,7 +91,10 @@ pub fn replay_stream(
         match item {
             StreamItem::Event(event) => system.ingest(event),
             StreamItem::Question(question) => {
-                let retrieved_ids = system.retrieve(&question.query, question.asked_at, top_k);
+                let scored_candidates =
+                    system.retrieve_scored(&question.query, question.asked_at, top_k);
+                let retrieved_ids: Vec<String> =
+                    scored_candidates.iter().map(|(id, _)| id.clone()).collect();
                 let recall = recall_at_k(&question.gold_event_ids, &retrieved_ids, top_k);
                 let tokens_injected = approx_token_count(&question.query)
                     + retrieved_ids
@@ -68,11 +107,40 @@ pub fn replay_stream(
                     retrieved_ids,
                     recall_at_k: recall,
                     tokens_injected,
+                    scored_candidates,
                 });
             }
         }
     }
     results
+}
+
+/// Replays `stream` through a freshly built system `replicates` times,
+/// returning each question's pass/fail outcome in every replicate, in
+/// stream order - the shape `stability::flip_rate` takes directly. A
+/// deterministic baseline always flips 0%; this is the control a noisy
+/// system (ACT-R's retrieval noise, a real Achiral adapter) is compared
+/// against. Each replicate starts from a fresh system (not a continued
+/// one), matching "repeated identical runs" (Plan 25's run-to-run test),
+/// not continued reinforcement across replicates.
+pub fn replay_stream_replicated(
+    stream: &Stream,
+    mut build_system: impl FnMut() -> Box<dyn MemorySystem>,
+    top_k: usize,
+    replicates: usize,
+) -> Vec<Vec<bool>> {
+    assert!(replicates > 0, "need at least one replicate");
+    let num_questions = stream.questions().count();
+    let mut outcomes: Vec<Vec<bool>> = vec![Vec::with_capacity(replicates); num_questions];
+
+    for _ in 0..replicates {
+        let mut system = build_system();
+        let results = replay_stream(stream, system.as_mut(), top_k);
+        for (i, result) in results.iter().enumerate() {
+            outcomes[i].push(result.recall_at_k >= 1.0);
+        }
+    }
+    outcomes
 }
 
 /// Re-ingests `stream`'s events `cycles` times (each cycle's events
@@ -177,6 +245,61 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             mean_recall,
             mean_tokens
         );
+
+        // None of these baselines claim a probability (baselines.rs: "the
+        // reference isolates what activation adds") - raw scores (a term
+        // count, an unbounded BM25 weight) run straight through
+        // brier_score would silently mislabel an unbounded score as if it
+        // were one. Derive a probability from the ranking first, same as
+        // calibration.rs requires for any vendor that doesn't volunteer
+        // one, and label it accordingly.
+        let raw_pairs: Vec<(f64, bool)> = results
+            .iter()
+            .zip(stream.questions())
+            .flat_map(|(result, question)| calibration_pairs(result, &question.gold_event_ids))
+            .collect();
+        if !raw_pairs.is_empty() {
+            let derived_probabilities = crate::calibration::derive_probabilities_from_scores(
+                &raw_pairs,
+                config.calibration_bins,
+            );
+            let derived_pairs: Vec<(f64, bool)> = derived_probabilities
+                .into_iter()
+                .zip(raw_pairs.iter().map(|&(_, observed)| observed))
+                .collect();
+            let brier = crate::calibration::brier_score(&derived_pairs);
+            let ece = crate::calibration::expected_calibration_error(
+                &derived_pairs,
+                config.calibration_bins,
+            );
+            println!(
+                "  derived brier score = {brier:.4}; derived expected calibration error = {ece:.4}"
+            );
+        }
+
+        if config.replicates > 1 {
+            let recency_half_life_days = config.recency_half_life_days;
+            let bounded_window_size = config.bounded_window_size;
+            let name_for_replicates = name.clone();
+            let outcomes = replay_stream_replicated(
+                &stream,
+                move || {
+                    build_baseline(
+                        &name_for_replicates,
+                        recency_half_life_days,
+                        bounded_window_size,
+                    )
+                    .expect("baseline name already validated above")
+                },
+                config.top_k,
+                config.replicates,
+            );
+            let flip_rate = crate::stability::flip_rate(&outcomes);
+            println!(
+                "  flip rate over {} replicate(s): {flip_rate:.4}",
+                config.replicates
+            );
+        }
     }
     Ok(())
 }
@@ -283,6 +406,78 @@ mod tests {
         // By cycle 3, full-context has ingested 3 distinct "x" events (one
         // per cycle, namespaced), so mean tokens = 1 (query) + 3 (content).
         assert_eq!(report, vec![(3, 4.0)]);
+    }
+
+    #[test]
+    fn replay_stream_carries_scored_candidates_alongside_retrieved_ids() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(event("e1", "2026-01-01T00:00:00Z")),
+                StreamItem::Question(crate::stream::StreamQuestion {
+                    id: "q1".to_string(),
+                    query: "irrelevant".to_string(),
+                    asked_at: "2026-01-15T00:00:00Z".parse().unwrap(),
+                    asked_by: Actor {
+                        id: "a".to_string(),
+                        kind: ActorKind::User,
+                    },
+                    gold_event_ids: vec!["e1".to_string()],
+                    gold_answer: None,
+                    validity: None,
+                }),
+            ],
+        };
+
+        let mut system = SeenSoFar { seen: Vec::new() };
+        let results = replay_stream(&stream, &mut system, 10);
+
+        // SeenSoFar has no real score, so this exercises the trait's
+        // rank-derived default: the one candidate at rank 0 scores 1.0.
+        assert_eq!(results[0].scored_candidates, vec![("e1".to_string(), 1.0)]);
+
+        let pairs = calibration_pairs(&results[0], &["e1".to_string()]);
+        assert_eq!(pairs, vec![(1.0, true)]);
+    }
+
+    #[test]
+    fn calibration_pairs_marks_a_non_gold_candidate_false() {
+        let result = QuestionResult {
+            question_id: "q1".to_string(),
+            retrieved_ids: vec!["e1".to_string(), "e2".to_string()],
+            recall_at_k: 0.0,
+            tokens_injected: 0,
+            scored_candidates: vec![("e1".to_string(), 0.9), ("e2".to_string(), 0.4)],
+        };
+
+        let pairs = calibration_pairs(&result, &["e2".to_string()]);
+        assert_eq!(pairs, vec![(0.9, false), (0.4, true)]);
+    }
+
+    #[test]
+    fn replay_stream_replicated_reports_zero_flip_rate_for_a_deterministic_system() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(event("e1", "2026-01-01T00:00:00Z")),
+                StreamItem::Question(crate::stream::StreamQuestion {
+                    id: "q1".to_string(),
+                    query: "irrelevant".to_string(),
+                    asked_at: "2026-01-15T00:00:00Z".parse().unwrap(),
+                    asked_by: Actor {
+                        id: "a".to_string(),
+                        kind: ActorKind::User,
+                    },
+                    gold_event_ids: vec!["e1".to_string()],
+                    gold_answer: None,
+                    validity: None,
+                }),
+            ],
+        };
+
+        let outcomes =
+            replay_stream_replicated(&stream, || Box::new(SeenSoFar { seen: Vec::new() }), 10, 3);
+
+        assert_eq!(outcomes, vec![vec![true, true, true]]);
+        assert_eq!(crate::stability::flip_rate(&outcomes), 0.0);
     }
 
     #[test]

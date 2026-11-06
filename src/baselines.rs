@@ -81,7 +81,19 @@ impl MemorySystem for VerbatimSystem {
         self.events.push((event.id.clone(), terms));
     }
 
-    fn retrieve(&mut self, query: &str, _now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+        self.retrieve_scored(query, now, top_k)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    fn retrieve_scored(
+        &mut self,
+        query: &str,
+        _now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
         let query_terms: HashSet<String> = tokenize(query).into_iter().collect();
         let scored: Vec<(String, f64)> = self
             .events
@@ -91,7 +103,6 @@ impl MemorySystem for VerbatimSystem {
         rank_by_score_then_id(scored)
             .into_iter()
             .take(top_k)
-            .map(|(id, _)| id)
             .collect()
     }
 }
@@ -147,7 +158,19 @@ impl MemorySystem for Bm25System {
         });
     }
 
-    fn retrieve(&mut self, query: &str, _now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+        self.retrieve_scored(query, now, top_k)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    fn retrieve_scored(
+        &mut self,
+        query: &str,
+        _now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
         if self.docs.is_empty() {
             return Vec::new();
         }
@@ -195,7 +218,6 @@ impl MemorySystem for Bm25System {
         rank_by_score_then_id(scored)
             .into_iter()
             .take(top_k)
-            .map(|(id, _)| id)
             .collect()
     }
 }
@@ -229,7 +251,19 @@ impl MemorySystem for RecencySystem {
         self.events.push((event.id.clone(), event.timestamp));
     }
 
-    fn retrieve(&mut self, _query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+        self.retrieve_scored(query, now, top_k)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    fn retrieve_scored(
+        &mut self,
+        _query: &str,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
         let decay = std::f64::consts::LN_2 / self.half_life_days;
         let scored: Vec<(String, f64)> = self
             .events
@@ -243,7 +277,6 @@ impl MemorySystem for RecencySystem {
         rank_by_score_then_id(scored)
             .into_iter()
             .take(top_k)
-            .map(|(id, _)| id)
             .collect()
     }
 }
@@ -428,6 +461,50 @@ mod tests {
 
         let retrieved = system.retrieve("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 10);
         assert_eq!(retrieved, vec!["e2", "e3"]);
+    }
+
+    #[test]
+    fn bm25_retrieve_scored_carries_the_real_bm25_score_not_a_rank_fallback() {
+        let mut system = Bm25System::new();
+        system.ingest(&event("d1", "cat cat cat", "2026-01-01T00:00:00Z"));
+        system.ingest(&event("d2", "cat dog", "2026-01-01T00:00:00Z"));
+
+        let scored = system.retrieve_scored("cat", "2026-02-01T00:00:00Z".parse().unwrap(), 2);
+        let idf = (1.0f64 + (2.0 - 2.0 + 0.5) / (2.0 + 0.5)).ln();
+        assert_eq!(scored[0].0, "d1");
+        assert!(scored[0].1 > 0.0);
+        // d1 has three occurrences of "cat" against d2's one, so its BM25
+        // score must be strictly higher - not the rank fallback 1.0/0.5,
+        // which would tie neither to term frequency nor to idf.
+        assert!(scored[0].1 > scored[1].1);
+        assert!(idf > 0.0);
+    }
+
+    #[test]
+    fn recency_retrieve_scored_carries_the_real_decay_score() {
+        let mut system = RecencySystem::new(10.0);
+        system.ingest(&event("e1", "x", "2026-01-01T00:00:00Z"));
+
+        let now = "2026-01-11T00:00:00Z".parse().unwrap(); // exactly one half-life later
+        let scored = system.retrieve_scored("ignored", now, 1);
+        assert_eq!(scored[0].0, "e1");
+        assert!((scored[0].1 - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn full_context_has_no_real_score_so_retrieve_scored_falls_back_to_rank() {
+        let mut system = FullContextSystem::new();
+        system.ingest(&event("e1", "a", "2026-01-01T00:00:00Z"));
+        system.ingest(&event("e2", "b", "2026-01-02T00:00:00Z"));
+
+        let scored = system.retrieve_scored("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 10);
+        // The trait default: rank 0 -> 1.0, rank 1 -> 0.5, in retrieve()'s
+        // own insertion order, since full-context has no confidence signal
+        // of its own to report.
+        assert_eq!(
+            scored,
+            vec![("e1".to_string(), 1.0), ("e2".to_string(), 0.5)]
+        );
     }
 
     #[test]

@@ -54,6 +54,19 @@ pub struct BenchmarkConfig {
     /// uses any randomness.
     #[clap(long, default_value = "0")]
     pub seed: u64,
+
+    /// Replay the stream through a freshly built system this many times,
+    /// reporting flip rate (Plan 25's run-to-run stability test) across
+    /// those replicates. A deterministic baseline always reports 0; this
+    /// is the control a noisy system is compared against. Only used with
+    /// `--replay-stream`.
+    #[clap(long, default_value = "1")]
+    pub replicates: usize,
+
+    /// Number of equal-width bins for calibration (reliability curve,
+    /// expected calibration error). Only used with `--replay-stream`.
+    #[clap(long, default_value = "10")]
+    pub calibration_bins: usize,
 }
 
 /// Runs a memory-system evaluation against a JSONL benchmark item file.
