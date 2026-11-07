@@ -1,0 +1,17 @@
+# foundry-01: a human + agent team. scribe (an agent) both speaks into the
+# shared org scope (foundry-auth-e1) and keeps its own private scratch
+# memory (scribe-e1, agent-scoped) - same actor, different scope per
+# event, which is the point: scope is about who can see the event, not
+# who wrote it. foundry-auth-e1/e2 also flips the usual authority
+# hard-negative around: here it's an agent's suggestion, not a VP's, that
+# must not outrank the human's later explicit decision.
+
+{"kind":"event","id":"foundry-e1","content":"Decided Foundry's eval pipeline runs nightly on the full suite.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"lead","kind":"user"},"scope":{"kind":"org","id":"foundry"},"source":"slack"}
+{"kind":"event","id":"scribe-e1","content":"Scratch note: eval pipeline flakiness looks correlated with GPU queue depth, unconfirmed.","timestamp":"2026-01-04T10:00:00Z","actor":{"id":"scribe","kind":"agent"},"scope":{"kind":"agent","id":"scribe"},"source":"agent-memory"}
+{"kind":"event","id":"foundry-auth-e1","content":"Agent summarized a researcher's comment as: switch the eval pipeline to run hourly instead of nightly.","timestamp":"2026-01-06T11:00:00Z","actor":{"id":"scribe","kind":"agent"},"scope":{"kind":"org","id":"foundry"},"source":"agent-memory"}
+{"kind":"event","id":"foundry-auth-e2","content":"Documented decision: eval pipeline stays nightly per foundry-e1; the agent's hourly suggestion was reviewed and not adopted, since hourly runs would double compute cost for no reliability gain.","timestamp":"2026-01-07T16:00:00Z","actor":{"id":"lead","kind":"user"},"scope":{"kind":"org","id":"foundry"},"source":"docs","supersedes":"foundry-auth-e1"}
+{"kind":"event","id":"foundry-e2","content":"Nightly run moved from 2am to 11pm UTC to finish before the morning stand-up.","timestamp":"2026-01-11T14:00:00Z","actor":{"id":"researcher","kind":"user"},"scope":{"kind":"org","id":"foundry"},"source":"slack","supersedes":"foundry-e1"}
+{"kind":"question","id":"foundry-q-15d","query":"What time does the nightly eval run?","asked_at":"2026-01-16T09:00:00Z","asked_by":{"id":"lead","kind":"user"},"gold_event_ids":["foundry-e2"],"gold_answer":"11pm UTC, nightly."}
+{"kind":"question","id":"foundry-q-leak","query":"Is there anything flagging GPU queue depth as a problem for the eval pipeline?","asked_at":"2026-01-21T09:00:00Z","asked_by":{"id":"lead","kind":"user"},"gold_event_ids":[],"gold_answer":"Nothing org-visible on that."}
+{"kind":"question","id":"foundry-q-authority","query":"Did the suggestion to run eval hourly get adopted?","asked_at":"2026-01-23T09:00:00Z","asked_by":{"id":"researcher","kind":"user"},"gold_event_ids":["foundry-auth-e2"],"gold_answer":"No - nightly stays; the agent's hourly suggestion was reviewed and not adopted."}
+{"kind":"question","id":"foundry-q-30d","query":"What time does the nightly eval run?","asked_at":"2026-01-31T09:00:00Z","asked_by":{"id":"lead","kind":"user"},"gold_event_ids":["foundry-e2"],"gold_answer":"11pm UTC, nightly."}

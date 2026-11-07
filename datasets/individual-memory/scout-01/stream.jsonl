@@ -1,0 +1,7 @@
+# scout-01: an agent's own private task memory, same mechanism as sam-01
+# with actor/scope kind flipped to agent - individual memory doesn't care
+# whether the "individual" is a person or an agent.
+
+{"kind":"event","id":"scout-e1","content":"Task state: migration branch cut from main at commit abc123.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"scout","kind":"agent"},"scope":{"kind":"agent","id":"scout"},"source":"agent-memory"}
+{"kind":"event","id":"scout-e2","content":"Task state: migration branch rebased onto main after a merge conflict, now at commit def456.","timestamp":"2026-01-08T10:00:00Z","actor":{"id":"scout","kind":"agent"},"scope":{"kind":"agent","id":"scout"},"source":"agent-memory","supersedes":"scout-e1"}
+{"kind":"question","id":"scout-q-15d","query":"What's the current state of the migration task?","asked_at":"2026-01-16T09:00:00Z","asked_by":{"id":"scout","kind":"agent"},"gold_event_ids":["scout-e2"],"gold_answer":"Rebased onto main after a merge conflict; now at commit def456."}

@@ -1,0 +1,10 @@
+# sam-01: one person's own private working memory - no second actor ever
+# appears, so there is no scope/leak axis to test here. This is the
+# baseline case the team and mixed-team categories build on: plain
+# supersession and recall, nothing shared, nothing to leak.
+
+{"kind":"event","id":"sam-e1","content":"This month's top priority: finish Client A's redesign.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"sam","kind":"user"},"scope":{"kind":"user","id":"sam"},"source":"notes"}
+{"kind":"event","id":"sam-e2","content":"Switched priority: Client B's urgent bug is now top priority; Client A's redesign is paused.","timestamp":"2026-01-09T10:00:00Z","actor":{"id":"sam","kind":"user"},"scope":{"kind":"user","id":"sam"},"source":"notes","supersedes":"sam-e1"}
+{"kind":"question","id":"sam-q-15d","query":"What's my top priority right now?","asked_at":"2026-01-16T09:00:00Z","asked_by":{"id":"sam","kind":"user"},"gold_event_ids":["sam-e2"],"gold_answer":"Client B's urgent bug; Client A's redesign is paused."}
+{"kind":"event","id":"sam-e3","content":"Client B's bug is resolved. Resumed Client A's redesign as top priority.","timestamp":"2026-01-20T11:00:00Z","actor":{"id":"sam","kind":"user"},"scope":{"kind":"user","id":"sam"},"source":"notes","supersedes":"sam-e2"}
+{"kind":"question","id":"sam-q-30d","query":"What's my top priority right now?","asked_at":"2026-01-31T09:00:00Z","asked_by":{"id":"sam","kind":"user"},"gold_event_ids":["sam-e3"],"gold_answer":"Client A's redesign, resumed."}

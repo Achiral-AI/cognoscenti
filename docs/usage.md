@@ -93,14 +93,20 @@ and `source`; `supersedes` is optional. Every question needs `kind`, `id`,
 `validity` are optional. File order is the canonical chronological order —
 it is never auto-sorted.
 
-For a larger worked example - one growing stream spanning 30 days, a
-plain supersession chain, and an authority hard-negative (a VP's informal
-suggestion that must not outrank a later, explicit, lower-rank
-correction) - see
-[`datasets/organizational-mesh/atlas-01/`](../datasets/organizational-mesh/atlas-01/).
-It's still small (3 questions): enough to run every command below against
-something real, not enough for a believable calibration or stability
-number yet.
+For larger worked examples, see `datasets/`: one directory per category -
+[`individual-memory/`](../datasets/individual-memory/) (a single actor,
+person or agent, no second actor to leak to),
+[`organizational-mesh/`](../datasets/organizational-mesh/) (an org's
+people-team stream, each instance carrying its own authority
+hard-negative - a VP's or director's informal suggestion that must not
+outrank a later, explicit, lower-rank correction), and
+[`mixed-teams/`](../datasets/mixed-teams/) (people and an agent sharing
+an org scope, the agent also keeping its own private scope). The
+org-mesh and mixed-team instances also carry a leak-rate trap: a
+user- or agent-scoped private note topically close to a later question
+that has no org-visible answer at all. Every instance is still small
+(3-4 questions): enough to run every command below against something
+real, not enough for a believable calibration or stability number yet.
 
 ### Lint
 

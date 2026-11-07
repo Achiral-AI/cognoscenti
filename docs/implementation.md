@@ -36,18 +36,39 @@ What it has not yet done:
   references only — there is no HTTP-backed vendor adapter for the stream
   eval yet (the JSONL item eval's `mem0`/`supermemory`/`zep`/`letta`
   env-var wiring does not carry over to `--replay-stream`).
-- **Only one stream dataset ships so far, and it's small.**
-  [`datasets/organizational-mesh/atlas-01/`](../datasets/organizational-mesh/atlas-01/)
-  is one synthetic org's 30-day stream with 15d/30d horizon cutoffs
-  (`horizons.json`) and an authority hard-negative (a VP's informal
-  suggestion vs. a later, explicit, documented decision) - enough to
-  exercise the runner end to end, not enough questions for a believable
-  calibration or stability number. See "Dataset scale-up plan" below for
-  what grows next, and in what order.
+- **Five small stream datasets ship so far, across three categories, and
+  none is benchmark-scale yet.** `datasets/` has one directory per
+  category, each holding named org/actor instances:
+  [`individual-memory/`](../datasets/individual-memory/) (`sam-01` a
+  person, `scout-01` an agent — same mechanism, no second actor, so no
+  scope/leak axis to test), [`organizational-mesh/`](../datasets/organizational-mesh/)
+  (`atlas-01`, `beacon-01` — org-scoped people-team streams, each with its
+  own authority hard-negative), and [`mixed-teams/`](../datasets/mixed-teams/)
+  (`foundry-01` — people and an agent in the same org scope, the agent
+  both speaking into the shared scope and keeping its own private
+  scratch memory). `beacon-01` and `foundry-01` also carry a leak-rate
+  trap: a user- or agent-scoped private note that overlaps a later
+  question's terms, so a scope-blind baseline can retrieve it, with a
+  vacuous (empty-gold) question checking that nothing org-visible exists
+  instead. See "Dataset scale-up plan" below for what grows next, and in
+  what order.
 - **Tier 2 is not started**: the full adapter contract (actor, scope,
   `answer`/`use`/`settle`, HTTP-backed vendor and Achiral systems) described
   in Plan 25 is a later phase. The current `MemorySystem` trait is a
   reduced version — `ingest`/`retrieve` only, no actor or scope parameter.
+  Concretely: the leak-rate traps above sit in the data, but nothing in
+  `src/adapter.rs` yet builds a `scoring::LeakTrial` from a question's
+  `asked_by` and its retrieved ids' source scopes, so `leak_rate` has
+  never been run against real retrieval output — only unit-tested in
+  isolation (`src/scoring.rs`). That hookup needs no trait change (the
+  runner already holds every event's scope via `stream.events()`), so
+  it's a small addition whenever it's wanted, not a Tier 2 dependency.
+  A true org-vs-suborg scope (a named sub-team, visible to its members
+  and no one else) is a separate, larger gap: `ScopeKind` has no `Team`
+  variant and `Actor` carries no team membership, so today's
+  "suborg" (`beacon-01`'s `platform-lead` note) is modeled as one
+  person's private scope, not a shared sub-team scope. A real `Team`
+  kind is deferred to a later major version.
 - **The token-savings axis has never been run against a real dataset.**
   `--cycles` is built and tested (`token_usage_by_cycle`), but no published
   number exists yet.
@@ -65,6 +86,14 @@ What it has not yet done:
   a separate, siloed file. Extending an org from 30 days to 90 adds more
   events to its one `stream.jsonl` and a new cutoff, never a second
   stream that silently diverges from the first.
+- **Three categories, one directory each, growing independently.**
+  `individual-memory/` (one actor, no scope axis), `organizational-mesh/`
+  (an org's people-team stream, the authority hard-negative's home),
+  and `mixed-teams/` (people and agents sharing an org scope, plus
+  agent-private scope) are separate axes, not horizon rungs of each
+  other — a new instance in one category (another org, another mixed
+  team) doesn't imply one in the others. Each instance is still a single
+  growing stream per the point above.
 - **Horizons spaced geometrically, not evenly.** ACT-R's base-level
   activation (`B_i = ln(Σ t_j^{-d})`) responds to *ratios* of elapsed
   time, not absolute gaps: doubling elapsed time moves it by the same

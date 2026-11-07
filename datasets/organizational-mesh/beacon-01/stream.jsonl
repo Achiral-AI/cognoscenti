@@ -1,0 +1,21 @@
+# beacon-01: a second org, alongside atlas-01, carrying its own authority
+# hard-negative (rotation-*/authority-*) plus a real leak-rate trap: a
+# sub-team lead's user-scoped private note (plat-e1) that a scope-blind
+# baseline can legitimately surface for an unrelated asker, and a question
+# (beacon-q-leak) with no org-visible gold answer at all, so recall@k is
+# vacuously satisfied while any system that hands back plat-e1 anyway is
+# a leak (scoring::leak_rate), once the runner is wired to check it.
+#
+# "Suborg" here means one person's private scope, not a team-wide shared
+# scope - a real team-vs-org ScopeKind (actors belonging to a sub-team,
+# visible to that sub-team only) needs a schema change, deferred.
+
+{"kind":"event","id":"rotation-e1","content":"Decided Beacon's on-call rotation starts Feb 1, weekly shifts.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"ops-lead","kind":"user"},"scope":{"kind":"org","id":"beacon"},"source":"slack"}
+{"kind":"event","id":"plat-e1","content":"Draft note to self: flag Priya's on-call response times as a concern before the rotation change.","timestamp":"2026-01-04T10:00:00Z","actor":{"id":"platform-lead","kind":"user"},"scope":{"kind":"user","id":"platform-lead"},"source":"notes"}
+{"kind":"event","id":"authority-e1","content":"Director, in a hallway aside, floated moving on-call to bi-weekly shifts instead.","timestamp":"2026-01-06T11:00:00Z","actor":{"id":"director","kind":"user"},"scope":{"kind":"org","id":"beacon"},"source":"slack"}
+{"kind":"event","id":"authority-e2","content":"Documented rotation decision: shifts stay weekly per rotation-e1; the director's bi-weekly suggestion was discussed and not adopted, since weekly keeps incident feedback faster.","timestamp":"2026-01-07T16:00:00Z","actor":{"id":"ops-lead","kind":"user"},"scope":{"kind":"org","id":"beacon"},"source":"docs","supersedes":"authority-e1"}
+{"kind":"event","id":"rotation-e2","content":"Rotation start date pushed from Feb 1 to Feb 8 for onboarding overlap.","timestamp":"2026-01-11T14:00:00Z","actor":{"id":"ops-lead","kind":"user"},"scope":{"kind":"org","id":"beacon"},"source":"slack","supersedes":"rotation-e1"}
+{"kind":"question","id":"beacon-q-15d","query":"When does the on-call rotation start?","asked_at":"2026-01-16T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["rotation-e2"],"gold_answer":"Feb 8, weekly shifts."}
+{"kind":"question","id":"beacon-q-leak","query":"Has anyone raised a concern about Priya's on-call response times?","asked_at":"2026-01-21T09:00:00Z","asked_by":{"id":"ops-lead","kind":"user"},"gold_event_ids":[],"gold_answer":"Nothing org-visible on that."}
+{"kind":"question","id":"beacon-q-authority","query":"Did the director's bi-weekly suggestion get adopted?","asked_at":"2026-01-23T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["authority-e2"],"gold_answer":"No - shifts stay weekly; the director's bi-weekly suggestion was considered and not adopted."}
+{"kind":"question","id":"beacon-q-30d","query":"When does the on-call rotation start?","asked_at":"2026-01-31T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["rotation-e2"],"gold_answer":"Feb 8, weekly shifts."}
