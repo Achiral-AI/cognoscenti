@@ -1,5 +1,15 @@
 # 2026-08-02 AI Memory Benchmark Run
 
+**Superseded 2026-10-27.** The 91.67% Top-1 result below does not measure
+Achiral. `organic-memory` was a local keyword scorer that added points for
+words like "validated", "current" and "reinforced" and subtracted them for
+"superseded", "stale" and "low-signal" — and the workload wrote those exact
+words into the item text, so the scorer could read the answer off the data.
+The `organic-memory` alias, its `achiral` alias, and the keyword scorer have
+been removed from Cognoscenti. This page is kept for transparency, not as a
+result to cite; see `results/organizational-memory-2026-08-02/README.md` for
+the full note.
+
 Cognoscenti now includes a public organizational-memory benchmark run for evaluating whether AI memory can be trusted under use.
 
 The run compares three reference architectures on the same 12-item JSONL workload:

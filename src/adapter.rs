@@ -7,7 +7,7 @@
 use crate::baselines::build_baseline;
 use crate::eval::parse_systems;
 use crate::runner::BenchmarkConfig;
-use crate::scoring::recall_at_k;
+use crate::scoring::{leak_rate, recall_at_k, LeakTrial};
 use crate::stream::{Stream, StreamEvent, StreamItem};
 use crate::tokens::{approx_token_count, geometric_checkpoints};
 use anyhow::Result;
@@ -40,6 +40,46 @@ pub trait MemorySystem {
             .map(|(rank, id)| (id, 1.0 / (rank as f64 + 1.0)))
             .collect()
     }
+
+    /// Which optional operations below this system actually implements.
+    /// Defaults to none: `ingest`/`retrieve` is the only contract every
+    /// system in this crate honors today (Plan 25 adapter contract v2).
+    /// The run manifest records this per system once a system declares
+    /// anything (not yet wired - no system overrides this).
+    fn capabilities(&self) -> Capabilities {
+        Capabilities::default()
+    }
+
+    /// Systems that synthesise an answer rather than only ranking memories
+    /// (e.g. Hindsight's `reflect`) override this. `None` for every system
+    /// that does not declare `capabilities().answer`.
+    fn answer(&mut self, _query: &str, _now: DateTime<Utc>) -> Option<String> {
+        None
+    }
+
+    /// Report which memories an answer relied on, the way a real client
+    /// would (Plan 25: `use(memory_ids, helpful)`; Achiral maps this to
+    /// `/agents/:agentSlug/:id/reinforce`). A no-op for every system that
+    /// does not declare `capabilities().use_feedback`.
+    fn use_feedback(&mut self, _memory_ids: &[String], _helpful: bool) {}
+
+    /// Let consolidation or decay run before the next question is asked
+    /// (Plan 25: `advance(now)` / `settle()`). A no-op for every system
+    /// that does not declare `capabilities().settle`.
+    fn settle(&mut self, _now: DateTime<Utc>) {}
+}
+
+/// Adapter contract v2's optional operations (Plan 25): which of
+/// `answer`, `use_feedback` and `settle` a system actually implements,
+/// beyond the required `ingest`/`retrieve`. A system that does not accept
+/// a simulated clock (no `settle` support) runs on wall-clock time; that is
+/// fair for systems without decay, and the run manifest records which mode
+/// each system used.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Capabilities {
+    pub answer: bool,
+    pub use_feedback: bool,
+    pub settle: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +107,41 @@ pub fn calibration_pairs(result: &QuestionResult, gold_event_ids: &[String]) -> 
         .scored_candidates
         .iter()
         .map(|(id, score)| (*score, gold.contains(id.as_str())))
+        .collect()
+}
+
+/// Builds one `LeakTrial` per question in `results`, pairing its asking
+/// actor with the scopes of every memory it retrieved - `scoring::leak_rate`'s
+/// input, computed straight from the stream. This measures a leak
+/// regardless of whether `system` is scope-aware at all: a baseline with no
+/// notion of scope (every baseline in this crate today) leaks exactly as
+/// often as the data makes it, which is the honest number for "how much
+/// does ignoring scope cost" (Plan 25 Team Memory: "A personal assistant's
+/// private memory never surfaces for another user or agent").
+pub fn leak_trials(stream: &Stream, results: &[QuestionResult]) -> Vec<LeakTrial> {
+    let scope_by_id: HashMap<&str, &crate::stream::Scope> = stream
+        .events()
+        .map(|event| (event.id.as_str(), &event.scope))
+        .collect();
+    let asked_by: HashMap<&str, &crate::stream::Actor> = stream
+        .questions()
+        .map(|q| (q.id.as_str(), &q.asked_by))
+        .collect();
+
+    results
+        .iter()
+        .filter_map(|result| {
+            let actor = asked_by.get(result.question_id.as_str())?;
+            let returned_scopes = result
+                .retrieved_ids
+                .iter()
+                .filter_map(|id| scope_by_id.get(id.as_str()).map(|scope| (*scope).clone()))
+                .collect();
+            Some(LeakTrial {
+                actor: (*actor).clone(),
+                returned_scopes,
+            })
+        })
         .collect()
 }
 
@@ -245,6 +320,15 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             mean_recall,
             mean_tokens
         );
+
+        let trials = leak_trials(&stream, &results);
+        if !trials.is_empty() {
+            println!(
+                "  leak rate over {} trial(s): {:.4}",
+                trials.len(),
+                leak_rate(&trials)
+            );
+        }
 
         // None of these baselines claim a probability (baselines.rs: "the
         // reference isolates what activation adds") - raw scores (a term
@@ -505,5 +589,93 @@ mod tests {
 
         // e1's content is "x" (1 token) + query "two words" (2 tokens) = 3.
         assert_eq!(results[0].tokens_injected, 3);
+    }
+
+    fn user_scoped_event(id: &str, owner: &str) -> StreamEvent {
+        let mut event = event(id, "2026-01-01T00:00:00Z");
+        event.scope = Scope {
+            kind: ScopeKind::User,
+            id: owner.to_string(),
+        };
+        event
+    }
+
+    fn question_asked_by(id: &str, actor_id: &str) -> crate::stream::StreamQuestion {
+        crate::stream::StreamQuestion {
+            id: id.to_string(),
+            query: "irrelevant".to_string(),
+            asked_at: "2026-01-15T00:00:00Z".parse().unwrap(),
+            asked_by: Actor {
+                id: actor_id.to_string(),
+                kind: ActorKind::User,
+            },
+            gold_event_ids: vec![],
+            gold_answer: None,
+            validity: None,
+        }
+    }
+
+    #[test]
+    fn leak_trials_pairs_each_questions_actor_with_the_scopes_it_retrieved() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(user_scoped_event("alice-note", "alice")),
+                StreamItem::Question(question_asked_by("q1", "bob")),
+            ],
+        };
+
+        // SeenSoFar has no scope awareness at all, so it returns
+        // alice-note to anyone who asks - exactly the case leak_rate must
+        // catch.
+        let mut system = SeenSoFar { seen: Vec::new() };
+        let results = replay_stream(&stream, &mut system, 10);
+
+        let trials = leak_trials(&stream, &results);
+        assert_eq!(trials.len(), 1);
+        assert_eq!(trials[0].actor.id, "bob");
+        assert_eq!(
+            trials[0].returned_scopes,
+            vec![user_scoped_event("alice-note", "alice").scope]
+        );
+    }
+
+    #[test]
+    fn leak_rate_over_leak_trials_catches_a_cross_actor_leak_but_not_self_access() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(user_scoped_event("alice-note", "alice")),
+                StreamItem::Question(question_asked_by("q-leak", "bob")),
+                StreamItem::Question(question_asked_by("q-self", "alice")),
+            ],
+        };
+
+        let mut system = SeenSoFar { seen: Vec::new() };
+        let results = replay_stream(&stream, &mut system, 10);
+
+        let trials = leak_trials(&stream, &results);
+        // bob's trial leaks (alice's memory is not his); alice's does not.
+        assert_eq!(crate::scoring::leak_rate(&trials), 0.5);
+    }
+
+    #[test]
+    fn a_system_that_declares_no_capabilities_defaults_to_none_supported() {
+        let system = SeenSoFar { seen: Vec::new() };
+        assert_eq!(system.capabilities(), Capabilities::default());
+        assert!(!Capabilities::default().answer);
+        assert!(!Capabilities::default().use_feedback);
+        assert!(!Capabilities::default().settle);
+    }
+
+    #[test]
+    fn a_system_with_no_answer_use_or_settle_override_is_a_harmless_no_op() {
+        let mut system = SeenSoFar { seen: Vec::new() };
+        let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+
+        assert_eq!(system.answer("anything", now), None);
+        // Neither call should panic or require any state; that is the point
+        // of a default no-op for a system that never declares the
+        // capability.
+        system.use_feedback(&["e1".to_string()], true);
+        system.settle(now);
     }
 }

@@ -19,6 +19,12 @@
   <a href="https://discord.gg/9vrw6RxKP">
     <img src="https://img.shields.io/badge/Discord-Join%20Community-5865F2?logo=discord&logoColor=white" alt="Join Discord">
   </a>
+  <a href="https://huggingface.co/datasets/achiral-ai/cognoscenti">
+    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Dataset-achiral--ai%2Fcognoscenti-yellow" alt="Hugging Face Dataset">
+  </a>
+  <a href="https://achiral.ai">
+    <img src="https://img.shields.io/badge/Achiral-achiral.ai-black" alt="Achiral">
+  </a>
 </p>
 
 ## Introduction
