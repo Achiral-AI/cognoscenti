@@ -39,11 +39,11 @@ What it has not yet done:
 - **Five small stream datasets ship so far, across three categories, and
   none is benchmark-scale yet.** `datasets/` has one directory per
   category, each holding named org/actor instances:
-  [`individual-memory/`](../datasets/individual-memory/) (`sam-01` a
+  [`individual-mesh/`](../datasets/individual-mesh/) (`sam-01` a
   person, `scout-01` an agent — same mechanism, no second actor, so no
-  scope/leak axis to test), [`organizational-mesh/`](../datasets/organizational-mesh/)
+  scope/leak axis to test), [`multiplayer-mesh/`](../datasets/multiplayer-mesh/)
   (`atlas-01`, `beacon-01` — org-scoped people-team streams, each with its
-  own authority hard-negative), and [`mixed-teams/`](../datasets/mixed-teams/)
+  own authority hard-negative), and [`mixed-player-mesh/`](../datasets/mixed-player-mesh/)
   (`foundry-01` — people and an agent in the same org scope, the agent
   both speaking into the shared scope and keeping its own private
   scratch memory). `beacon-01` and `foundry-01` also carry a leak-rate
@@ -87,9 +87,9 @@ What it has not yet done:
   events to its one `stream.jsonl` and a new cutoff, never a second
   stream that silently diverges from the first.
 - **Three categories, one directory each, growing independently.**
-  `individual-memory/` (one actor, no scope axis), `organizational-mesh/`
+  `individual-mesh/` (one actor, no scope axis), `multiplayer-mesh/`
   (an org's people-team stream, the authority hard-negative's home),
-  and `mixed-teams/` (people and agents sharing an org scope, plus
+  and `mixed-player-mesh/` (people and agents sharing an org scope, plus
   agent-private scope) are separate axes, not horizon rungs of each
   other — a new instance in one category (another org, another mixed
   team) doesn't imply one in the others. Each instance is still a single

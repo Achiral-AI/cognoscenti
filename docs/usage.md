@@ -94,15 +94,15 @@ and `source`; `supersedes` is optional. Every question needs `kind`, `id`,
 it is never auto-sorted.
 
 For larger worked examples, see `datasets/`: one directory per category -
-[`individual-memory/`](../datasets/individual-memory/) (a single actor,
+[`individual-mesh/`](../datasets/individual-mesh/) (a single actor,
 person or agent, no second actor to leak to),
-[`organizational-mesh/`](../datasets/organizational-mesh/) (an org's
+[`multiplayer-mesh/`](../datasets/multiplayer-mesh/) (an org's
 people-team stream, each instance carrying its own authority
 hard-negative - a VP's or director's informal suggestion that must not
 outrank a later, explicit, lower-rank correction), and
-[`mixed-teams/`](../datasets/mixed-teams/) (people and an agent sharing
+[`mixed-player-mesh/`](../datasets/mixed-player-mesh/) (people and an agent sharing
 an org scope, the agent also keeping its own private scope). The
-org-mesh and mixed-team instances also carry a leak-rate trap: a
+multiplayer-mesh and mixed-player-mesh instances also carry a leak-rate trap: a
 user- or agent-scoped private note topically close to a later question
 that has no org-visible answer at all. Every instance is still small
 (3-4 questions): enough to run every command below against something
@@ -169,7 +169,7 @@ system `N` times to report run-to-run flip rate (`stability::flip_rate`):
 
 ```bash
 cargo run --release -- \
-  --replay-stream datasets/organizational-mesh/atlas-01/stream.jsonl \
+  --replay-stream datasets/multiplayer-mesh/atlas-01/stream.jsonl \
   --systems bm25 \
   --top-k 2 \
   --replicates 3 \
