@@ -78,6 +78,19 @@ pub fn ingest_event_payload(event: &StreamEvent) -> Value {
         "occurredAt": event.timestamp.to_rfc3339(),
         "actor": event.actor,
         "metadata": event_metadata(event),
+        // This event's own id, so a later event's `supersedes` reference
+        // (below) can resolve against it (achiral.ai's eventExternalId()
+        // reads payload.id/externalId/eventId, stored as
+        // BusinessEvent.source.externalId) - metadata.cognoscenti_event_id
+        // above is for output-side result scoring only, never read as an
+        // external id.
+        "id": event.id,
+        // Plan 25/26 review (achiral.ai, 2026-11-10): ingestEvent() now
+        // reads an explicit supersession reference from this top-level
+        // field, resolved within this event's own source scope - not from
+        // `metadata`, which event_metadata() above also carries for
+        // debugging but which achiral.ai never reads for this purpose.
+        "supersedes": event.supersedes,
     })
 }
 
@@ -256,6 +269,39 @@ mod tests {
         assert_eq!(payload["text"], "hello");
         assert_eq!(payload["occurredAt"], "2026-01-01T00:00:00+00:00");
         assert_eq!(payload["metadata"]["cognoscenti_event_id"], "e1");
+    }
+
+    // achiral.ai's PublicMemoryService.ingestEvent() (Plan 25/26 review,
+    // 2026-11-10) reads an explicit supersession reference from the
+    // top-level `supersedes` body field, resolved within the ingesting
+    // source's own scope - not from `metadata`, which it never reads for
+    // this purpose. Sending it only inside metadata (as event_metadata()
+    // already did) is silently inert on achiral's side.
+    #[test]
+    fn ingest_event_payload_carries_an_explicit_supersedes_reference_as_a_top_level_field() {
+        let mut event = org_event();
+        event.supersedes = Some("e1".to_string());
+        let payload = ingest_event_payload(&event);
+        assert_eq!(payload["supersedes"], "e1");
+    }
+
+    #[test]
+    fn ingest_event_payload_omits_supersedes_when_the_event_has_none() {
+        let payload = ingest_event_payload(&org_event());
+        assert!(payload.get("supersedes").is_none() || payload["supersedes"].is_null());
+    }
+
+    // A supersedes reference names a prior event by achiral.ai's external-id
+    // convention (payload.id/externalId/eventId, resolved via
+    // BusinessEvent.source.externalId) - so this event's own id has to be
+    // sent as a top-level field too, not only inside metadata (which
+    // achiral.ai never reads as an external id). Without this, no event
+    // Cognoscenti ingests is ever findable by id, so no supersedes
+    // reference - from this adapter - could ever resolve.
+    #[test]
+    fn ingest_event_payload_carries_its_own_id_as_a_top_level_field() {
+        let payload = ingest_event_payload(&org_event());
+        assert_eq!(payload["id"], "e1");
     }
 
     #[test]
