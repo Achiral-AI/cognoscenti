@@ -40,6 +40,14 @@ use serde_json::{json, Value};
 pub struct AchiralHttpSystem {
     base_url: String,
     api_key: Option<String>,
+    /// How long settle() waits for achiral.ai's asynchronous write cycle
+    /// (ingest only stages a candidate; a separate cycle writes it to the
+    /// store) to catch up before the next question is asked. 0 by
+    /// default - a real production deployment's write cycle runs on
+    /// minutes, which no settle() wait could make synchronous anyway, so
+    /// this is an explicit opt-in for a benchmark deployment tuned for a
+    /// fast cycle, not a default behavior change.
+    settle_ms: u64,
 }
 
 impl AchiralHttpSystem {
@@ -47,7 +55,15 @@ impl AchiralHttpSystem {
         let base_url = std::env::var("COGNOSCENTI_ACHIRAL_BASE_URL")
             .with_context(|| "missing COGNOSCENTI_ACHIRAL_BASE_URL")?;
         let api_key = std::env::var("COGNOSCENTI_ACHIRAL_API_KEY").ok();
-        Ok(Self { base_url, api_key })
+        let settle_ms = std::env::var("COGNOSCENTI_ACHIRAL_SETTLE_MS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        Ok(Self {
+            base_url,
+            api_key,
+            settle_ms,
+        })
     }
 }
 
@@ -219,6 +235,19 @@ impl MemorySystem for AchiralHttpSystem {
             .into_iter()
             .map(|(id, _)| id)
             .collect()
+    }
+
+    fn capabilities(&self) -> crate::adapter::Capabilities {
+        crate::adapter::Capabilities {
+            settle: true,
+            ..Default::default()
+        }
+    }
+
+    fn settle(&mut self, _now: DateTime<Utc>) {
+        if self.settle_ms > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(self.settle_ms));
+        }
     }
 
     fn retrieve_scored(
@@ -423,6 +452,7 @@ mod tests {
         let mut system = AchiralHttpSystem {
             base_url: "http://unused".to_string(),
             api_key: None,
+            settle_ms: 0,
         };
         let mut event = org_event();
         event.scope = Scope {
@@ -457,6 +487,46 @@ mod tests {
             ),
             "http://unused/v1/memory/retrieve"
         );
+    }
+
+    #[test]
+    fn settle_waits_at_least_settle_ms_for_the_write_cycle_to_catch_up() {
+        let mut system = AchiralHttpSystem {
+            base_url: "http://unused".to_string(),
+            api_key: None,
+            settle_ms: 30,
+        };
+        let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+
+        let started = std::time::Instant::now();
+        system.settle(now);
+
+        assert!(started.elapsed() >= std::time::Duration::from_millis(30));
+    }
+
+    #[test]
+    fn settle_is_instant_when_settle_ms_is_zero_the_default() {
+        let mut system = AchiralHttpSystem {
+            base_url: "http://unused".to_string(),
+            api_key: None,
+            settle_ms: 0,
+        };
+        let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
+
+        let started = std::time::Instant::now();
+        system.settle(now);
+
+        assert!(started.elapsed() < std::time::Duration::from_millis(30));
+    }
+
+    #[test]
+    fn declares_the_settle_capability() {
+        let system = AchiralHttpSystem {
+            base_url: "http://unused".to_string(),
+            api_key: None,
+            settle_ms: 0,
+        };
+        assert!(system.capabilities().settle);
     }
 
     #[test]

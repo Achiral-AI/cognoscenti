@@ -181,6 +181,12 @@ pub fn replay_stream(
         match item {
             StreamItem::Event(event) => system.ingest(event),
             StreamItem::Question(question) => {
+                // Let a system with an asynchronous write path (Plan
+                // 25/26: achiral.ai stages a candidate at ingest, writes
+                // it on a separate cycle) settle before this question can
+                // see what was just ingested - a no-op for every system
+                // that doesn't override settle().
+                system.settle(question.asked_at);
                 let scored_candidates = system.retrieve_scored(
                     &question.query,
                     &question.asked_by,
@@ -264,6 +270,15 @@ pub fn token_usage_by_cycle(
         }
 
         if pending_checkpoints.remove(&cycle) {
+            // Same reasoning as replay_stream(): an asynchronous write
+            // path needs to settle before this checkpoint's questions can
+            // see this cycle's events.
+            system.settle(
+                stream
+                    .questions()
+                    .next()
+                    .map_or_else(Utc::now, |q| q.asked_at),
+            );
             let mut total_tokens = 0usize;
             let mut count = 0usize;
             for question in stream.questions() {
@@ -763,6 +778,63 @@ mod tests {
 
         assert_eq!(results[0].retrieved_ids, vec!["alice-note".to_string()]);
         assert_eq!(results[1].retrieved_ids, Vec::<String>::new());
+    }
+
+    // A system whose write path is asynchronous (Plan 25/26: achiral.ai
+    // stages a candidate at ingest, then writes it to its store on a
+    // separate cycle) needs its consolidation to run before the *next*
+    // question can see what was just ingested - settle() already exists
+    // for exactly this ("let consolidation or decay run before the next
+    // question is asked"), but nothing called it.
+    struct SettleSpy {
+        settled_at: Vec<DateTime<Utc>>,
+    }
+
+    impl MemorySystem for SettleSpy {
+        fn name(&self) -> &str {
+            "settle-spy"
+        }
+        fn ingest(&mut self, _event: &StreamEvent) {}
+        fn retrieve(
+            &mut self,
+            _query: &str,
+            _actor: &Actor,
+            _now: DateTime<Utc>,
+            _top_k: usize,
+        ) -> Vec<String> {
+            Vec::new()
+        }
+        fn settle(&mut self, now: DateTime<Utc>) {
+            self.settled_at.push(now);
+        }
+    }
+
+    #[test]
+    fn replay_stream_settles_before_every_question_with_the_question_s_own_asked_at() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(event("e1", "2026-01-01T00:00:00Z")),
+                StreamItem::Question(question_asked_by("q1", "pm")),
+                StreamItem::Event(event("e2", "2026-01-02T00:00:00Z")),
+                StreamItem::Question(question_asked_by("q2", "pm")),
+            ],
+        };
+        let mut system = SettleSpy {
+            settled_at: Vec::new(),
+        };
+
+        replay_stream(&stream, &mut system, 3);
+
+        // Once per question, not per event, and with that question's own
+        // asked_at (question_asked_by's fixture: 2026-01-15T00:00:00Z) -
+        // not the event timestamps, which settle() has nothing to do with.
+        assert_eq!(
+            system.settled_at,
+            vec![
+                "2026-01-15T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+                "2026-01-15T00:00:00Z".parse::<DateTime<Utc>>().unwrap(),
+            ]
+        );
     }
 
     #[test]
