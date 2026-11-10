@@ -10,7 +10,7 @@
 //! reimplemented locally.
 
 use crate::adapter::MemorySystem;
-use crate::stream::StreamEvent;
+use crate::stream::{Actor, StreamEvent};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
@@ -81,8 +81,14 @@ impl MemorySystem for VerbatimSystem {
         self.events.push((event.id.clone(), terms));
     }
 
-    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
-        self.retrieve_scored(query, now, top_k)
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        self.retrieve_scored(query, actor, now, top_k)
             .into_iter()
             .map(|(id, _)| id)
             .collect()
@@ -91,6 +97,7 @@ impl MemorySystem for VerbatimSystem {
     fn retrieve_scored(
         &mut self,
         query: &str,
+        _actor: &Actor,
         _now: DateTime<Utc>,
         top_k: usize,
     ) -> Vec<(String, f64)> {
@@ -158,8 +165,14 @@ impl MemorySystem for Bm25System {
         });
     }
 
-    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
-        self.retrieve_scored(query, now, top_k)
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        self.retrieve_scored(query, actor, now, top_k)
             .into_iter()
             .map(|(id, _)| id)
             .collect()
@@ -168,6 +181,7 @@ impl MemorySystem for Bm25System {
     fn retrieve_scored(
         &mut self,
         query: &str,
+        _actor: &Actor,
         _now: DateTime<Utc>,
         top_k: usize,
     ) -> Vec<(String, f64)> {
@@ -251,8 +265,14 @@ impl MemorySystem for RecencySystem {
         self.events.push((event.id.clone(), event.timestamp));
     }
 
-    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String> {
-        self.retrieve_scored(query, now, top_k)
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        self.retrieve_scored(query, actor, now, top_k)
             .into_iter()
             .map(|(id, _)| id)
             .collect()
@@ -261,6 +281,7 @@ impl MemorySystem for RecencySystem {
     fn retrieve_scored(
         &mut self,
         _query: &str,
+        _actor: &Actor,
         now: DateTime<Utc>,
         top_k: usize,
     ) -> Vec<(String, f64)> {
@@ -311,7 +332,13 @@ impl MemorySystem for FullContextSystem {
         self.events.push(event.id.clone());
     }
 
-    fn retrieve(&mut self, _query: &str, _now: DateTime<Utc>, _top_k: usize) -> Vec<String> {
+    fn retrieve(
+        &mut self,
+        _query: &str,
+        _actor: &Actor,
+        _now: DateTime<Utc>,
+        _top_k: usize,
+    ) -> Vec<String> {
         self.events.clone()
     }
 }
@@ -347,7 +374,13 @@ impl MemorySystem for BoundedWindowSystem {
         self.events.push_back(event.id.clone());
     }
 
-    fn retrieve(&mut self, _query: &str, _now: DateTime<Utc>, _top_k: usize) -> Vec<String> {
+    fn retrieve(
+        &mut self,
+        _query: &str,
+        _actor: &Actor,
+        _now: DateTime<Utc>,
+        _top_k: usize,
+    ) -> Vec<String> {
         self.events.iter().cloned().collect()
     }
 }
@@ -375,6 +408,15 @@ mod tests {
         }
     }
 
+    /// None of these baselines look at who's asking - this stands in for
+    /// "any actor" wherever a test exercises ranking, not scope.
+    fn any_actor() -> Actor {
+        Actor {
+            id: "asker".to_string(),
+            kind: ActorKind::User,
+        }
+    }
+
     #[test]
     fn verbatim_ranks_by_term_overlap_and_breaks_ties_by_id() {
         let mut system = VerbatimSystem::new();
@@ -382,7 +424,12 @@ mod tests {
         system.ingest(&event("e1", "the cat sat", "2026-01-01T00:00:00Z"));
         system.ingest(&event("e3", "the dog ran", "2026-01-01T00:00:00Z"));
 
-        let retrieved = system.retrieve("cat", "2026-02-01T00:00:00Z".parse().unwrap(), 3);
+        let retrieved = system.retrieve(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            3,
+        );
         // e1 and e2 tie on overlap (1 term) - id order breaks the tie.
         assert_eq!(retrieved, vec!["e1", "e2", "e3"]);
     }
@@ -394,7 +441,12 @@ mod tests {
         system.ingest(&event("d2", "cat dog", "2026-01-01T00:00:00Z"));
         system.ingest(&event("d3", "dog dog", "2026-01-01T00:00:00Z"));
 
-        let retrieved = system.retrieve("cat", "2026-02-01T00:00:00Z".parse().unwrap(), 3);
+        let retrieved = system.retrieve(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            3,
+        );
         assert_eq!(retrieved, vec!["d1", "d2", "d3"]);
 
         // N=3, n(cat)=2, avgdl=7/3. Hand-computed from the standard BM25
@@ -423,7 +475,12 @@ mod tests {
         system.ingest(&event("d1", "cat cat cat", "2026-01-01T00:00:00Z"));
         system.ingest(&event("d2", "dog dog", "2026-01-01T00:00:00Z"));
 
-        let retrieved = system.retrieve("cat", "2026-02-01T00:00:00Z".parse().unwrap(), 1);
+        let retrieved = system.retrieve(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            1,
+        );
         assert_eq!(retrieved, vec!["d1"]);
     }
 
@@ -435,6 +492,7 @@ mod tests {
 
         let retrieved = system.retrieve(
             "this query matches nothing in content",
+            &any_actor(),
             "2026-02-15T00:00:00Z".parse().unwrap(),
             2,
         );
@@ -448,7 +506,12 @@ mod tests {
         system.ingest(&event("e2", "b", "2026-01-02T00:00:00Z"));
         system.ingest(&event("e3", "c", "2026-01-03T00:00:00Z"));
 
-        let retrieved = system.retrieve("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 1);
+        let retrieved = system.retrieve(
+            "ignored",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            1,
+        );
         assert_eq!(retrieved, vec!["e1", "e2", "e3"]);
     }
 
@@ -459,7 +522,12 @@ mod tests {
         system.ingest(&event("e2", "b", "2026-01-02T00:00:00Z"));
         system.ingest(&event("e3", "c", "2026-01-03T00:00:00Z"));
 
-        let retrieved = system.retrieve("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 10);
+        let retrieved = system.retrieve(
+            "ignored",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            10,
+        );
         assert_eq!(retrieved, vec!["e2", "e3"]);
     }
 
@@ -469,7 +537,12 @@ mod tests {
         system.ingest(&event("d1", "cat cat cat", "2026-01-01T00:00:00Z"));
         system.ingest(&event("d2", "cat dog", "2026-01-01T00:00:00Z"));
 
-        let scored = system.retrieve_scored("cat", "2026-02-01T00:00:00Z".parse().unwrap(), 2);
+        let scored = system.retrieve_scored(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            2,
+        );
         let idf = (1.0f64 + (2.0 - 2.0 + 0.5) / (2.0 + 0.5)).ln();
         assert_eq!(scored[0].0, "d1");
         assert!(scored[0].1 > 0.0);
@@ -486,7 +559,7 @@ mod tests {
         system.ingest(&event("e1", "x", "2026-01-01T00:00:00Z"));
 
         let now = "2026-01-11T00:00:00Z".parse().unwrap(); // exactly one half-life later
-        let scored = system.retrieve_scored("ignored", now, 1);
+        let scored = system.retrieve_scored("ignored", &any_actor(), now, 1);
         assert_eq!(scored[0].0, "e1");
         assert!((scored[0].1 - 0.5).abs() < 1e-9);
     }
@@ -497,7 +570,12 @@ mod tests {
         system.ingest(&event("e1", "a", "2026-01-01T00:00:00Z"));
         system.ingest(&event("e2", "b", "2026-01-02T00:00:00Z"));
 
-        let scored = system.retrieve_scored("ignored", "2026-02-01T00:00:00Z".parse().unwrap(), 10);
+        let scored = system.retrieve_scored(
+            "ignored",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            10,
+        );
         // The trait default: rank 0 -> 1.0, rank 1 -> 0.5, in retrieve()'s
         // own insertion order, since full-context has no confidence signal
         // of its own to report.
@@ -523,7 +601,7 @@ mod tests {
         let expected = (-decay * elapsed_days).exp();
         assert!((expected - 0.5).abs() < 1e-9);
 
-        let retrieved = system.retrieve("ignored", now, 1);
+        let retrieved = system.retrieve("ignored", &any_actor(), now, 1);
         assert_eq!(retrieved, vec!["e1"]);
     }
 }

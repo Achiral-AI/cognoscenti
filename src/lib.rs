@@ -1,3 +1,4 @@
+pub mod achiral_http;
 pub mod actr;
 pub mod adapter;
 pub mod baselines;
@@ -5,6 +6,7 @@ pub mod calibration;
 pub mod core;
 pub mod determinism;
 pub mod eval;
+pub mod http_stream;
 pub mod lint;
 pub mod manifest;
 pub mod runner;
@@ -13,11 +15,12 @@ pub mod stability;
 pub mod stream;
 pub mod tokens;
 
+pub use achiral_http::AchiralHttpSystem;
 pub use actr::{
     activation, base_level_activation, fan_strength, retrieval_probability, sample_noise,
 };
 pub use adapter::{
-    calibration_pairs, replay_stream, replay_stream_replicated, run_baseline_replay,
+    build_system, calibration_pairs, replay_stream, replay_stream_replicated, run_baseline_replay,
     token_usage_by_cycle, MemorySystem, QuestionResult,
 };
 pub use baselines::{
@@ -31,6 +34,7 @@ pub use calibration::{
 pub use core::{Context, MemoryChunk, RetrievalResult};
 pub use determinism::seeded_rng;
 pub use eval::{BenchmarkItem, MemoryEvalMetrics, MemoryEvalReport, SystemEvalReport};
+pub use http_stream::HttpStreamSystem;
 pub use lint::{lint, LintIssue, ANSWER_REVEALING_MARKERS};
 pub use manifest::RunManifest;
 pub use runner::{BenchmarkConfig, BenchmarkRunner};

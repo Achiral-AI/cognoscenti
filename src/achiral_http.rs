@@ -1,0 +1,373 @@
+//! `MemorySystem` adapter calling Achiral's real public memory API
+//! (`achiral.ai`'s `routes/publicMemory.js`), not Cognoscenti's generic
+//! envelope (`http_stream.rs`) - every shape below was verified against
+//! the actual route/service code on 2026-11-07, not guessed. Configured
+//! via `COGNOSCENTI_ACHIRAL_BASE_URL` and `COGNOSCENTI_ACHIRAL_API_KEY`,
+//! sent as `Authorization: Bearer <api_key>` (matching
+//! `middleware/mcpTokenAuth.js`'s `acm_...` token convention).
+//!
+//! Scope support, updated 2026-11-09: `ScopeKind::Org` and `ScopeKind::Agent`
+//! are both wired (`ingest_url`/`retrieve_url` pick the route). Org goes to
+//! `POST {base}/v1/memory/events` (ingest) and `POST {base}/v1/memory/retrieve`
+//! (retrieve, async triage - a 5-minute cron actually writes to Weaviate, not
+//! the ingest call itself). Agent goes to `POST {base}/v1/memory/agents/{slug}`
+//! (`remember`, synchronous, no triage lag, but no `occurredAt` support) and
+//! `POST {base}/v1/memory/agents/{slug}/retrieve` - both verified against achiral.ai's
+//! real route/service code, not guessed; the gap here was always this
+//! adapter never calling them, not achiral.ai missing them. `ScopeKind::User`
+//! still panics on ingest (`ingest_url` returns `None`) - achiral.ai's public
+//! memory router has no user-scoped route at all, confirmed by reading it;
+//! a user actor's retrieve still falls back to org-scope, same as before,
+//! since there is nowhere else to send it.
+//!
+//! `actor` now decides the retrieve route (an agent actor retrieves from its
+//! own scope; a user actor from the org's) - `recall` has no separate actor
+//! concept on achiral.ai's public API, so this is purely adapter-side
+//! routing. `now` IS sent, as the `X-Achiral-Eval-Now` header
+//! (`eval_now_header`) - achiral.ai's `recall`/`reinforce` honour it under
+//! `INFERENCE_EVAL_MODE`, confirmed 2026-11-08 (Plan 25's "Public memory
+//! API: honour now" is done on both sides now). `reinforce` itself is not
+//! wired into this adapter yet (no `use_feedback` override), so only
+//! retrieval is time-travel-safe so far.
+
+use crate::adapter::MemorySystem;
+use crate::http_stream::run_json_post;
+use crate::stream::{Actor, ActorKind, Scope, ScopeKind, StreamEvent};
+use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
+use serde_json::{json, Value};
+
+pub struct AchiralHttpSystem {
+    base_url: String,
+    api_key: Option<String>,
+}
+
+impl AchiralHttpSystem {
+    pub fn from_env() -> Result<Self> {
+        let base_url = std::env::var("COGNOSCENTI_ACHIRAL_BASE_URL")
+            .with_context(|| "missing COGNOSCENTI_ACHIRAL_BASE_URL")?;
+        let api_key = std::env::var("COGNOSCENTI_ACHIRAL_API_KEY").ok();
+        Ok(Self { base_url, api_key })
+    }
+}
+
+/// `POST /v1/memory/events`'s body (`normalizeDeveloperEvent`,
+/// achiral.ai `services/memory/PublicMemoryService.js:149-185`): requires
+/// `type`/`eventType` and `text`/`summary`/`description`; `occurredAt` is
+/// honored, confirmed (defaults to the wall clock if absent - we always
+/// send it so stream order is preserved). `type` has no fixed vocabulary
+/// verified in that code, so this names the event's real origin plainly
+/// rather than inventing a value the vendor might expect.
+pub fn ingest_event_payload(event: &StreamEvent) -> Value {
+    json!({
+        "type": "cognoscenti-stream-event",
+        "text": event.content,
+        "occurredAt": event.timestamp.to_rfc3339(),
+        "actor": event.actor,
+        "metadata": {
+            "cognoscenti_event_id": event.id,
+            "source": event.source,
+            "supersedes": event.supersedes,
+        },
+    })
+}
+
+/// `POST /v1/memory/agents/{slug}`'s body (`remember`, achiral.ai
+/// `services/memory/PublicMemoryService.js:499-567`): requires `text`;
+/// writes directly and synchronously into the agent's own memory store
+/// (`agentStore.writeStructured`) - unlike the org-scope `/events` path,
+/// there is no async triage/candidate-write lag, and no `occurredAt`
+/// support at all (`remember()` reads no timestamp field), confirmed by
+/// reading the method body.
+pub fn ingest_agent_payload(event: &StreamEvent) -> Value {
+    json!({ "text": event.content })
+}
+
+/// Where to `POST` an ingest for this event's scope - `None` when no
+/// verified route exists (`ScopeKind::User`: achiral.ai's public memory
+/// API has no user-scoped path at all).
+pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
+    match scope.kind {
+        ScopeKind::Org => Some(format!("{base_url}/v1/memory/events")),
+        // `/v1/memory/agents/:agentSlug` (`remember`), verified end to end
+        // against achiral.ai's real route/service code 2026-11-09 -
+        // confirmed this adapter is the only thing that was missing, not
+        // achiral.ai.
+        ScopeKind::Agent => Some(format!("{base_url}/v1/memory/agents/{}", scope.id)),
+        ScopeKind::User => None,
+    }
+}
+
+/// Where to `POST` a retrieval for this actor - the actor asking is who
+/// the query is scoped to (an agent asks within its own memory; a user
+/// asks within the org's). achiral.ai has no verified user-scoped
+/// retrieve path either, so a user actor still goes to the org-scope
+/// endpoint, same as today.
+pub fn retrieve_url(base_url: &str, actor: &Actor) -> String {
+    match actor.kind {
+        ActorKind::Agent => format!("{base_url}/v1/memory/agents/{}/retrieve", actor.id),
+        ActorKind::User => format!("{base_url}/v1/memory/retrieve"),
+    }
+}
+
+/// `POST /v1/memory/retrieve`'s body (`PublicMemoryService.recall`,
+/// `:334-343`): `{query, limit, category}`. No `actor` or `now` field
+/// exists on this endpoint, confirmed - results reflect current
+/// wall-clock state, not simulated time.
+pub fn retrieve_payload(query: &str, top_k: usize) -> Value {
+    json!({ "query": query, "limit": top_k })
+}
+
+/// Simulated time for achiral.ai's `recall`/`reinforce` eval-mode override
+/// (`X-Achiral-Eval-Now`, ISO 8601) - the public memory API takes it as a
+/// header, not a body field, confirmed 2026-11-08. Server-side, it's
+/// ignored unless `INFERENCE_EVAL_MODE=true`, so sending it unconditionally
+/// here is harmless against a production deployment.
+pub fn eval_now_header(now: DateTime<Utc>) -> (&'static str, String) {
+    ("X-Achiral-Eval-Now", now.to_rfc3339())
+}
+
+/// Parses the org-scope `recall` response (`serializeMemory`,
+/// `:102-123`): `{"data": [{"id", "score", ...}, ...]}`. `score` is the
+/// real activation score (`doc._activationScore ?? doc.activationScore
+/// ?? null`), defaulted to 0.0 here when null or missing - same
+/// convention as `http_stream::parse_retrieve_response`.
+pub fn parse_recall_response(value: &Value) -> Vec<(String, f64)> {
+    value
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let id = item.get("id")?.as_str()?.to_string();
+                    let score = item.get("score").and_then(Value::as_f64).unwrap_or(0.0);
+                    Some((id, score))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+impl MemorySystem for AchiralHttpSystem {
+    fn name(&self) -> &str {
+        "achiral"
+    }
+
+    fn ingest(&mut self, event: &StreamEvent) {
+        let url = ingest_url(&self.base_url, &event.scope).unwrap_or_else(|| {
+            panic!(
+                "AchiralHttpSystem has no verified user-scope ingest path - achiral.ai's \
+                 public memory API has no user-scoped route at all"
+            )
+        });
+        let payload = match event.scope.kind {
+            ScopeKind::Agent => ingest_agent_payload(event),
+            ScopeKind::Org | ScopeKind::User => ingest_event_payload(event),
+        };
+        run_json_post(&url, self.api_key.as_deref(), &[], &payload)
+            .unwrap_or_else(|err| panic!("achiral ingest failed: {err:#}"));
+    }
+
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        self.retrieve_scored(query, actor, now, top_k)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    fn retrieve_scored(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
+        let url = retrieve_url(&self.base_url, actor);
+        let payload = retrieve_payload(query, top_k);
+        let headers = [eval_now_header(now)];
+        let response = run_json_post(&url, self.api_key.as_deref(), &headers, &payload)
+            .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
+        parse_recall_response(&response)
+            .into_iter()
+            .take(top_k)
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stream::{ActorKind, Scope};
+
+    fn org_event() -> StreamEvent {
+        StreamEvent {
+            id: "e1".to_string(),
+            content: "hello".to_string(),
+            timestamp: "2026-01-01T00:00:00Z".parse().unwrap(),
+            actor: Actor {
+                id: "a".to_string(),
+                kind: ActorKind::User,
+            },
+            scope: Scope {
+                kind: ScopeKind::Org,
+                id: "acme".to_string(),
+            },
+            source: "test".to_string(),
+            supersedes: None,
+        }
+    }
+
+    #[test]
+    fn ingest_event_payload_carries_content_as_text_and_timestamp_as_occurred_at() {
+        let payload = ingest_event_payload(&org_event());
+        assert_eq!(payload["text"], "hello");
+        assert_eq!(payload["occurredAt"], "2026-01-01T00:00:00+00:00");
+        assert_eq!(payload["metadata"]["cognoscenti_event_id"], "e1");
+    }
+
+    #[test]
+    fn retrieve_payload_carries_query_and_top_k_as_limit() {
+        let payload = retrieve_payload("where is it", 5);
+        assert_eq!(payload["query"], "where is it");
+        assert_eq!(payload["limit"], 5);
+    }
+
+    #[test]
+    fn parse_recall_response_pairs_each_item_with_its_real_activation_score() {
+        let response = json!({"data": [{"id": "m1", "score": 0.8}, {"id": "m2", "score": 0.3}]});
+        assert_eq!(
+            parse_recall_response(&response),
+            vec![("m1".to_string(), 0.8), ("m2".to_string(), 0.3)]
+        );
+    }
+
+    #[test]
+    fn parse_recall_response_defaults_a_null_score_to_zero() {
+        let response = json!({"data": [{"id": "m1", "score": null}]});
+        assert_eq!(
+            parse_recall_response(&response),
+            vec![("m1".to_string(), 0.0)]
+        );
+    }
+
+    #[test]
+    fn parse_recall_response_is_empty_when_data_is_missing() {
+        assert_eq!(
+            parse_recall_response(&json!({})),
+            Vec::<(String, f64)>::new()
+        );
+    }
+
+    #[test]
+    fn eval_now_header_carries_the_simulated_time_as_rfc3339() {
+        let now: DateTime<Utc> = "2026-01-15T00:00:00Z".parse().unwrap();
+        assert_eq!(
+            eval_now_header(now),
+            (
+                "X-Achiral-Eval-Now",
+                "2026-01-15T00:00:00+00:00".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn ingest_url_routes_org_scope_to_the_events_endpoint() {
+        assert_eq!(
+            ingest_url(
+                "http://unused",
+                &Scope {
+                    kind: ScopeKind::Org,
+                    id: "acme".to_string(),
+                }
+            ),
+            Some("http://unused/v1/memory/events".to_string())
+        );
+    }
+
+    #[test]
+    fn ingest_url_routes_agent_scope_to_its_own_remember_endpoint() {
+        assert_eq!(
+            ingest_url(
+                "http://unused",
+                &Scope {
+                    kind: ScopeKind::Agent,
+                    id: "bot".to_string(),
+                }
+            ),
+            Some("http://unused/v1/memory/agents/bot".to_string())
+        );
+    }
+
+    #[test]
+    fn ingest_url_is_none_for_user_scope_no_verified_route_exists() {
+        assert_eq!(
+            ingest_url(
+                "http://unused",
+                &Scope {
+                    kind: ScopeKind::User,
+                    id: "sam".to_string(),
+                }
+            ),
+            None
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "no verified user-scope ingest path")]
+    fn ingest_panics_for_a_user_scoped_event_rather_than_misrouting_it() {
+        let mut system = AchiralHttpSystem {
+            base_url: "http://unused".to_string(),
+            api_key: None,
+        };
+        let mut event = org_event();
+        event.scope = Scope {
+            kind: ScopeKind::User,
+            id: "sam".to_string(),
+        };
+        system.ingest(&event);
+    }
+
+    #[test]
+    fn ingest_agent_payload_carries_content_as_text() {
+        let payload = ingest_agent_payload(&org_event());
+        assert_eq!(payload["text"], "hello");
+        // No occurredAt - achiral.ai's agent `remember` reads no timestamp
+        // field at all, confirmed by reading PublicMemoryService.remember().
+        assert!(payload.get("occurredAt").is_none());
+    }
+
+    #[test]
+    fn retrieve_url_routes_a_user_actor_to_org_scope() {
+        assert_eq!(
+            retrieve_url(
+                "http://unused",
+                &Actor {
+                    id: "bob".to_string(),
+                    kind: ActorKind::User,
+                }
+            ),
+            "http://unused/v1/memory/retrieve"
+        );
+    }
+
+    #[test]
+    fn retrieve_url_routes_an_agent_actor_to_its_own_scope() {
+        assert_eq!(
+            retrieve_url(
+                "http://unused",
+                &Actor {
+                    id: "scout".to_string(),
+                    kind: ActorKind::Agent,
+                }
+            ),
+            "http://unused/v1/memory/agents/scout/retrieve"
+        );
+    }
+}

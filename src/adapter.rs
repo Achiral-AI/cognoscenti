@@ -1,14 +1,19 @@
 //! A reduced, local version of Plan 25's adapter contract: `ingest` and
-//! `retrieve` only, no `actor` or scope filtering, for baselines that don't
-//! claim to be scope-aware. The full contract (`actor`, `scope`, `answer`,
-//! `use`, `settle`, and HTTP-backed vendor/Achiral systems) is a later
-//! phase, not this one.
+//! `retrieve` (with the asking `actor`), no scope filtering of its own, for
+//! baselines that don't claim to be scope-aware - every baseline in this
+//! crate today ignores `actor` entirely, which is what makes "ignoring
+//! scope" a measured leak rate (`leak_trials`) rather than an assumption. A
+//! real adapter that wants to enforce scope filters using `actor` itself.
+//! The rest of the full contract (`answer`, `use`, `settle`, and
+//! HTTP-backed vendor/Achiral systems) is a later phase, not this one.
 
+use crate::achiral_http::AchiralHttpSystem;
 use crate::baselines::build_baseline;
 use crate::eval::parse_systems;
+use crate::http_stream::HttpStreamSystem;
 use crate::runner::BenchmarkConfig;
 use crate::scoring::{leak_rate, recall_at_k, LeakTrial};
-use crate::stream::{Stream, StreamEvent, StreamItem};
+use crate::stream::{Actor, Stream, StreamEvent, StreamItem};
 use crate::tokens::{approx_token_count, geometric_checkpoints};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -17,8 +22,17 @@ use std::collections::{HashMap, HashSet};
 pub trait MemorySystem {
     fn name(&self) -> &str;
     fn ingest(&mut self, event: &StreamEvent);
-    /// Ranked event IDs, best first, at most `top_k` of them.
-    fn retrieve(&mut self, query: &str, now: DateTime<Utc>, top_k: usize) -> Vec<String>;
+    /// Ranked event IDs, best first, at most `top_k` of them. `actor` is
+    /// who is asking (Plan 25 adapter contract v2: `retrieve(query, actor,
+    /// now, top_k)`) - a system that wants to enforce scope checks it here;
+    /// one that doesn't (every baseline in this crate) ignores it.
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String>;
 
     /// `retrieve`'s ranking, each id paired with a confidence score, for
     /// calibration (Plan 25/26: "native" calibration on a system's own
@@ -31,10 +45,11 @@ pub trait MemorySystem {
     fn retrieve_scored(
         &mut self,
         query: &str,
+        actor: &Actor,
         now: DateTime<Utc>,
         top_k: usize,
     ) -> Vec<(String, f64)> {
-        self.retrieve(query, now, top_k)
+        self.retrieve(query, actor, now, top_k)
             .into_iter()
             .enumerate()
             .map(|(rank, id)| (id, 1.0 / (rank as f64 + 1.0)))
@@ -166,8 +181,12 @@ pub fn replay_stream(
         match item {
             StreamItem::Event(event) => system.ingest(event),
             StreamItem::Question(question) => {
-                let scored_candidates =
-                    system.retrieve_scored(&question.query, question.asked_at, top_k);
+                let scored_candidates = system.retrieve_scored(
+                    &question.query,
+                    &question.asked_by,
+                    question.asked_at,
+                    top_k,
+                );
                 let retrieved_ids: Vec<String> =
                     scored_candidates.iter().map(|(id, _)| id.clone()).collect();
                 let recall = recall_at_k(&question.gold_event_ids, &retrieved_ids, top_k);
@@ -248,7 +267,12 @@ pub fn token_usage_by_cycle(
             let mut total_tokens = 0usize;
             let mut count = 0usize;
             for question in stream.questions() {
-                let retrieved_ids = system.retrieve(&question.query, question.asked_at, top_k);
+                let retrieved_ids = system.retrieve(
+                    &question.query,
+                    &question.asked_by,
+                    question.asked_at,
+                    top_k,
+                );
                 total_tokens += approx_token_count(&question.query)
                     + retrieved_ids
                         .iter()
@@ -268,6 +292,37 @@ pub fn token_usage_by_cycle(
     report
 }
 
+/// Builds a system by name: `"achiral"` is the real, vendor-specific
+/// shim (`AchiralHttpSystem`) against achiral.ai's own public memory
+/// API, not Cognoscenti's generic envelope; anything else first tries a
+/// local baseline (`build_baseline`), then falls back to the generic
+/// HTTP-backed system configured via
+/// `COGNOSCENTI_<NAME>_INGEST_URL`/`_RETRIEVE_URL`/`_API_KEY` (Plan 25
+/// Showdown 1 step 6) - the same dispatch shape as eval.rs's
+/// `build_system` for the legacy item-eval path.
+pub fn build_system(
+    name: &str,
+    recency_half_life_days: f64,
+    bounded_window_size: usize,
+) -> Result<Box<dyn MemorySystem>> {
+    if name == "achiral" {
+        return AchiralHttpSystem::from_env()
+            .map(|system| Box::new(system) as Box<dyn MemorySystem>);
+    }
+
+    match build_baseline(name, recency_half_life_days, bounded_window_size) {
+        Ok(system) => Ok(system),
+        Err(baseline_err) => HttpStreamSystem::from_env(name)
+            .map(|system| Box::new(system) as Box<dyn MemorySystem>)
+            .map_err(|http_err| {
+                anyhow::anyhow!(
+                    "{name} is not a known baseline ({baseline_err}) and has no HTTP \
+                     configuration ({http_err})"
+                )
+            }),
+    }
+}
+
 /// Loads a stream, replays it through every baseline named in
 /// `config.systems`, and prints per-question and mean recall@k for each.
 pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
@@ -278,7 +333,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
     let stream = Stream::load(path)?;
 
     for name in parse_systems(&config.systems) {
-        let mut system = build_baseline(
+        let mut system = build_system(
             &name,
             config.recency_half_life_days,
             config.bounded_window_size,
@@ -368,12 +423,12 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             let outcomes = replay_stream_replicated(
                 &stream,
                 move || {
-                    build_baseline(
+                    build_system(
                         &name_for_replicates,
                         recency_half_life_days,
                         bounded_window_size,
                     )
-                    .expect("baseline name already validated above")
+                    .expect("system name already validated above")
                 },
                 config.top_k,
                 config.replicates,
@@ -407,7 +462,13 @@ mod tests {
         fn ingest(&mut self, event: &StreamEvent) {
             self.seen.push(event.id.clone());
         }
-        fn retrieve(&mut self, _query: &str, _now: DateTime<Utc>, top_k: usize) -> Vec<String> {
+        fn retrieve(
+            &mut self,
+            _query: &str,
+            _actor: &Actor,
+            _now: DateTime<Utc>,
+            top_k: usize,
+        ) -> Vec<String> {
             self.seen.iter().take(top_k).cloned().collect()
         }
     }
@@ -655,6 +716,79 @@ mod tests {
         let trials = leak_trials(&stream, &results);
         // bob's trial leaks (alice's memory is not his); alice's does not.
         assert_eq!(crate::scoring::leak_rate(&trials), 0.5);
+    }
+
+    /// Returns org-scoped events to anyone, but a user-scoped event only to
+    /// the actor asking - proving `actor` actually reaches `retrieve`
+    /// through `replay_stream`, not just that the signature compiles.
+    struct ScopeAwareSpy {
+        events: Vec<(String, Scope)>,
+    }
+
+    impl MemorySystem for ScopeAwareSpy {
+        fn name(&self) -> &str {
+            "scope-aware-spy"
+        }
+        fn ingest(&mut self, event: &StreamEvent) {
+            self.events.push((event.id.clone(), event.scope.clone()));
+        }
+        fn retrieve(
+            &mut self,
+            _query: &str,
+            actor: &Actor,
+            _now: DateTime<Utc>,
+            top_k: usize,
+        ) -> Vec<String> {
+            self.events
+                .iter()
+                .filter(|(_, scope)| scope.kind == ScopeKind::Org || scope.id == actor.id)
+                .map(|(id, _)| id.clone())
+                .take(top_k)
+                .collect()
+        }
+    }
+
+    #[test]
+    fn replay_stream_passes_the_asking_actor_through_to_retrieve() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(user_scoped_event("alice-note", "alice")),
+                StreamItem::Question(question_asked_by("q-alice", "alice")),
+                StreamItem::Question(question_asked_by("q-bob", "bob")),
+            ],
+        };
+
+        let mut system = ScopeAwareSpy { events: Vec::new() };
+        let results = replay_stream(&stream, &mut system, 10);
+
+        assert_eq!(results[0].retrieved_ids, vec!["alice-note".to_string()]);
+        assert_eq!(results[1].retrieved_ids, Vec::<String>::new());
+    }
+
+    #[test]
+    fn build_system_still_resolves_a_known_baseline_by_name() {
+        let system = build_system("verbatim", 30.0, 10).expect("verbatim is a known baseline");
+        assert_eq!(system.name(), "verbatim");
+    }
+
+    #[test]
+    fn build_system_routes_achiral_to_the_vendor_specific_shim_not_the_generic_fallback() {
+        let err = build_system("achiral", 30.0, 10)
+            .map(|_| ())
+            .expect_err("no COGNOSCENTI_ACHIRAL_BASE_URL is set in the test environment");
+        // Must name the achiral-specific env var, not the generic
+        // baseline/HttpStreamSystem fallback's error - proves "achiral"
+        // is routed to AchiralHttpSystem, not treated as an unknown name.
+        assert!(err.to_string().contains("COGNOSCENTI_ACHIRAL_BASE_URL"));
+    }
+
+    #[test]
+    fn build_system_falls_back_to_http_for_an_unrecognized_name_and_names_both_failures() {
+        let err = build_system("nonexistent-vendor-xyz", 30.0, 10)
+            .map(|_| ())
+            .expect_err("no baseline or env config exists for this name");
+        let message = err.to_string();
+        assert!(message.contains("nonexistent-vendor-xyz"));
     }
 
     #[test]
