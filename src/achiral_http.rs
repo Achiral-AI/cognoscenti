@@ -51,6 +51,19 @@ impl AchiralHttpSystem {
     }
 }
 
+/// `metadata` sent at ingest time on every scope, carrying the original
+/// StreamEvent id so a later retrieve can map a result back to it -
+/// achiral.ai's own `id` is the Weaviate document's internal UUID, never
+/// the StreamEvent id, so without this round trip recall scoring could
+/// never match a result against `gold_event_ids`.
+fn event_metadata(event: &StreamEvent) -> Value {
+    json!({
+        "cognoscenti_event_id": event.id,
+        "source": event.source,
+        "supersedes": event.supersedes,
+    })
+}
+
 /// `POST /v1/memory/events`'s body (`normalizeDeveloperEvent`,
 /// achiral.ai `services/memory/PublicMemoryService.js:149-185`): requires
 /// `type`/`eventType` and `text`/`summary`/`description`; `occurredAt` is
@@ -64,11 +77,7 @@ pub fn ingest_event_payload(event: &StreamEvent) -> Value {
         "text": event.content,
         "occurredAt": event.timestamp.to_rfc3339(),
         "actor": event.actor,
-        "metadata": {
-            "cognoscenti_event_id": event.id,
-            "source": event.source,
-            "supersedes": event.supersedes,
-        },
+        "metadata": event_metadata(event),
     })
 }
 
@@ -80,7 +89,10 @@ pub fn ingest_event_payload(event: &StreamEvent) -> Value {
 /// support at all (`remember()` reads no timestamp field), confirmed by
 /// reading the method body.
 pub fn ingest_agent_payload(event: &StreamEvent) -> Value {
-    json!({ "text": event.content })
+    json!({
+        "text": event.content,
+        "metadata": event_metadata(event),
+    })
 }
 
 /// Where to `POST` an ingest for this event's scope - `None` when no
@@ -127,6 +139,20 @@ pub fn eval_now_header(now: DateTime<Utc>) -> (&'static str, String) {
     ("X-Achiral-Eval-Now", now.to_rfc3339())
 }
 
+/// The id to score this retrieved item against. Prefers the original
+/// `cognoscenti_event_id` this adapter sent at ingest time
+/// (`event_metadata`), echoed back in `metadata` when achiral.ai
+/// preserved it, over achiral.ai's own `id` - the Weaviate document's
+/// internal UUID, unrelated to any StreamEvent id. `gold_event_ids` are
+/// StreamEvent ids, so scoring against the raw UUID could never match.
+fn recall_item_id(item: &Value) -> Option<String> {
+    item.get("metadata")
+        .and_then(|metadata| metadata.get("cognoscenti_event_id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_string))
+}
+
 /// Parses the org-scope `recall` response (`serializeMemory`,
 /// `:102-123`): `{"data": [{"id", "score", ...}, ...]}`. `score` is the
 /// real activation score (`doc._activationScore ?? doc.activationScore
@@ -140,7 +166,7 @@ pub fn parse_recall_response(value: &Value) -> Vec<(String, f64)> {
             items
                 .iter()
                 .filter_map(|item| {
-                    let id = item.get("id")?.as_str()?.to_string();
+                    let id = recall_item_id(item)?;
                     let score = item.get("score").and_then(Value::as_f64).unwrap_or(0.0);
                     Some((id, score))
                 })
@@ -265,6 +291,32 @@ mod tests {
         );
     }
 
+    // achiral.ai's own `id` is the Weaviate document's internal UUID, not
+    // the StreamEvent id this adapter sent at ingest time - gold_event_ids
+    // are StreamEvent ids, so scoring against the raw UUID could never
+    // match. When achiral.ai echoes back the metadata this adapter sent,
+    // prefer it.
+    #[test]
+    fn parse_recall_response_prefers_the_original_event_id_from_metadata_over_the_raw_weaviate_id()
+    {
+        let response = json!({"data": [
+            {"id": "weaviate-uuid-1", "score": 0.8, "metadata": {"cognoscenti_event_id": "e2"}},
+        ]});
+        assert_eq!(
+            parse_recall_response(&response),
+            vec![("e2".to_string(), 0.8)]
+        );
+    }
+
+    #[test]
+    fn parse_recall_response_falls_back_to_the_raw_id_when_metadata_has_none() {
+        let response = json!({"data": [{"id": "weaviate-uuid-1", "score": 0.8}]});
+        assert_eq!(
+            parse_recall_response(&response),
+            vec![("weaviate-uuid-1".to_string(), 0.8)]
+        );
+    }
+
     #[test]
     fn eval_now_header_carries_the_simulated_time_as_rfc3339() {
         let now: DateTime<Utc> = "2026-01-15T00:00:00Z".parse().unwrap();
@@ -341,6 +393,10 @@ mod tests {
         // No occurredAt - achiral.ai's agent `remember` reads no timestamp
         // field at all, confirmed by reading PublicMemoryService.remember().
         assert!(payload.get("occurredAt").is_none());
+        // metadata.cognoscenti_event_id, same as ingest_event_payload - the
+        // id-mapping recall scoring depends on, so agent-scope ingestion
+        // carries it too.
+        assert_eq!(payload["metadata"]["cognoscenti_event_id"], "e1");
     }
 
     #[test]
