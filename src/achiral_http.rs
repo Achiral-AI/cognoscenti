@@ -50,11 +50,60 @@ pub struct AchiralHttpSystem {
     settle_ms: u64,
 }
 
+/// Picks the API key for one replicate - a pure function over the two
+/// relevant env values (not reading `std::env` itself, so it is testable
+/// without the parallel-test env-var races that come with mutating global
+/// process state).
+///
+/// `COGNOSCENTI_ACHIRAL_API_KEYS` (comma-separated), when present, names
+/// one independently-provisioned org per replicate - the only way
+/// `--replicates` can test independent runs against a live, stateful
+/// deployment rather than every replicate accumulating into the same one.
+/// Its count must be at least `index + 1`; an index past the end is a
+/// setup error (not enough orgs provisioned for the requested replicate
+/// count), not a silent fallback. Without it, every replicate uses the
+/// single `COGNOSCENTI_ACHIRAL_API_KEY` - today's behavior, unchanged.
+fn resolve_api_key_for_replicate(
+    keys_env: Option<&str>,
+    single_key_env: Option<&str>,
+    index: usize,
+) -> Result<Option<String>> {
+    match keys_env {
+        Some(keys) => {
+            let keys: Vec<&str> = keys
+                .split(',')
+                .map(str::trim)
+                .filter(|k| !k.is_empty())
+                .collect();
+            let key = keys.get(index).with_context(|| {
+                format!(
+                    "COGNOSCENTI_ACHIRAL_API_KEYS names {} key(s), but replicate index {index} needs one more",
+                    keys.len()
+                )
+            })?;
+            Ok(Some(key.to_string()))
+        }
+        None => Ok(single_key_env.map(str::to_string)),
+    }
+}
+
 impl AchiralHttpSystem {
     pub fn from_env() -> Result<Self> {
+        Self::from_env_at(0)
+    }
+
+    /// Like `from_env()`, but for one replicate of several - see
+    /// `resolve_api_key_for_replicate`.
+    pub fn from_env_at(index: usize) -> Result<Self> {
         let base_url = std::env::var("COGNOSCENTI_ACHIRAL_BASE_URL")
             .with_context(|| "missing COGNOSCENTI_ACHIRAL_BASE_URL")?;
-        let api_key = std::env::var("COGNOSCENTI_ACHIRAL_API_KEY").ok();
+        let api_key = resolve_api_key_for_replicate(
+            std::env::var("COGNOSCENTI_ACHIRAL_API_KEYS")
+                .ok()
+                .as_deref(),
+            std::env::var("COGNOSCENTI_ACHIRAL_API_KEY").ok().as_deref(),
+            index,
+        )?;
         let settle_ms = std::env::var("COGNOSCENTI_ACHIRAL_SETTLE_MS")
             .ok()
             .and_then(|value| value.parse().ok())
@@ -273,6 +322,36 @@ impl MemorySystem for AchiralHttpSystem {
 mod tests {
     use super::*;
     use crate::stream::{ActorKind, Scope};
+
+    #[test]
+    fn resolve_api_key_picks_the_nth_key_when_a_keys_list_is_given() {
+        let key = resolve_api_key_for_replicate(Some("k0,k1,k2"), None, 1).unwrap();
+        assert_eq!(key, Some("k1".to_string()));
+    }
+
+    #[test]
+    fn resolve_api_key_trims_whitespace_around_each_key() {
+        let key = resolve_api_key_for_replicate(Some(" k0 , k1 "), None, 1).unwrap();
+        assert_eq!(key, Some("k1".to_string()));
+    }
+
+    #[test]
+    fn resolve_api_key_errors_when_the_index_has_no_matching_key() {
+        let err = resolve_api_key_for_replicate(Some("k0,k1"), None, 2).unwrap_err();
+        assert!(err.to_string().contains("2 key(s)"));
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_to_the_single_key_without_a_keys_list() {
+        let key = resolve_api_key_for_replicate(None, Some("solo-key"), 7).unwrap();
+        assert_eq!(key, Some("solo-key".to_string()));
+    }
+
+    #[test]
+    fn resolve_api_key_is_none_when_neither_env_value_is_set() {
+        let key = resolve_api_key_for_replicate(None, None, 0).unwrap();
+        assert_eq!(key, None);
+    }
 
     fn org_event() -> StreamEvent {
         StreamEvent {

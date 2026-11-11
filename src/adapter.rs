@@ -223,9 +223,14 @@ pub fn replay_stream(
 /// against. Each replicate starts from a fresh system (not a continued
 /// one), matching "repeated identical runs" (Plan 25's run-to-run test),
 /// not continued reinforcement across replicates.
+///
+/// `build_system` receives the replicate's index (0-based) - a system
+/// backed by live, stateful storage (achiral.ai) needs it to pick a
+/// separately-provisioned backing store per replicate; every baseline in
+/// this crate ignores it, since it carries no state between calls anyway.
 pub fn replay_stream_replicated(
     stream: &Stream,
-    mut build_system: impl FnMut() -> Box<dyn MemorySystem>,
+    mut build_system: impl FnMut(usize) -> Box<dyn MemorySystem>,
     top_k: usize,
     replicates: usize,
 ) -> Vec<Vec<bool>> {
@@ -233,8 +238,8 @@ pub fn replay_stream_replicated(
     let num_questions = stream.questions().count();
     let mut outcomes: Vec<Vec<bool>> = vec![Vec::with_capacity(replicates); num_questions];
 
-    for _ in 0..replicates {
-        let mut system = build_system();
+    for index in 0..replicates {
+        let mut system = build_system(index);
         let results = replay_stream(stream, system.as_mut(), top_k);
         for (i, result) in results.iter().enumerate() {
             outcomes[i].push(result.recall_at_k >= 1.0);
@@ -338,6 +343,25 @@ pub fn build_system(
     }
 }
 
+/// Like `build_system()`, for one of several `--replicates`. Only
+/// `"achiral"` is index-aware (`AchiralHttpSystem::from_env_at`, picking
+/// one of several pre-provisioned orgs via `COGNOSCENTI_ACHIRAL_API_KEYS`),
+/// since every baseline and the generic HTTP fallback carry no state
+/// between calls; the index makes no difference to them, so this defers
+/// to `build_system()` unchanged for anything else.
+pub fn build_system_for_replicate(
+    name: &str,
+    index: usize,
+    recency_half_life_days: f64,
+    bounded_window_size: usize,
+) -> Result<Box<dyn MemorySystem>> {
+    if name == "achiral" {
+        return AchiralHttpSystem::from_env_at(index)
+            .map(|system| Box::new(system) as Box<dyn MemorySystem>);
+    }
+    build_system(name, recency_half_life_days, bounded_window_size)
+}
+
 /// Loads a stream, replays it through every baseline named in
 /// `config.systems`, and prints per-question and mean recall@k for each.
 pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
@@ -437,13 +461,14 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             let name_for_replicates = name.clone();
             let outcomes = replay_stream_replicated(
                 &stream,
-                move || {
-                    build_system(
+                move |index| {
+                    build_system_for_replicate(
                         &name_for_replicates,
+                        index,
                         recency_half_life_days,
                         bounded_window_size,
                     )
-                    .expect("system name already validated above")
+                    .expect("system name already validated above, or COGNOSCENTI_ACHIRAL_API_KEYS has too few keys for this many replicates")
                 },
                 config.top_k,
                 config.replicates,
@@ -633,11 +658,39 @@ mod tests {
             ],
         };
 
-        let outcomes =
-            replay_stream_replicated(&stream, || Box::new(SeenSoFar { seen: Vec::new() }), 10, 3);
+        let outcomes = replay_stream_replicated(
+            &stream,
+            |_index| Box::new(SeenSoFar { seen: Vec::new() }),
+            10,
+            3,
+        );
 
         assert_eq!(outcomes, vec![vec![true, true, true]]);
         assert_eq!(crate::stability::flip_rate(&outcomes), 0.0);
+    }
+
+    // A real adapter against a live, stateful deployment (achiral.ai) can
+    // only test independent replicates if each one talks to its own,
+    // separately-provisioned backing store - the index lets the closure
+    // pick a different one per replicate (e.g. the Nth of several
+    // pre-provisioned orgs), instead of every replicate reusing the same
+    // one and accumulating into it.
+    #[test]
+    fn replay_stream_replicated_passes_the_replicate_index_to_build_system() {
+        let stream = Stream { items: vec![] };
+        let mut seen_indices = Vec::new();
+
+        replay_stream_replicated(
+            &stream,
+            |index| {
+                seen_indices.push(index);
+                Box::new(SeenSoFar { seen: Vec::new() })
+            },
+            10,
+            4,
+        );
+
+        assert_eq!(seen_indices, vec![0, 1, 2, 3]);
     }
 
     #[test]
@@ -852,6 +905,24 @@ mod tests {
         // baseline/HttpStreamSystem fallback's error - proves "achiral"
         // is routed to AchiralHttpSystem, not treated as an unknown name.
         assert!(err.to_string().contains("COGNOSCENTI_ACHIRAL_BASE_URL"));
+    }
+
+    #[test]
+    fn build_system_for_replicate_routes_achiral_through_from_env_at() {
+        let err = build_system_for_replicate("achiral", 2, 30.0, 10)
+            .map(|_| ())
+            .expect_err("no COGNOSCENTI_ACHIRAL_BASE_URL is set in the test environment");
+        assert!(err.to_string().contains("COGNOSCENTI_ACHIRAL_BASE_URL"));
+    }
+
+    #[test]
+    fn build_system_for_replicate_ignores_the_index_for_every_non_achiral_system() {
+        // A baseline carries no state between calls, so the index is
+        // irrelevant to it - same outcome as build_system() regardless of
+        // which index is passed.
+        let system = build_system_for_replicate("verbatim", 3, 30.0, 10)
+            .expect("verbatim is a known baseline");
+        assert_eq!(system.name(), "verbatim");
     }
 
     #[test]
