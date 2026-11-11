@@ -1,0 +1,31 @@
+# consolidation-01: tests memory emergence directly, not store-retrieval -
+# does repeated, successful use of a memory change how likely it is to be
+# retrieved later (Achiral's own definition: Memory = delta S_t -> delta
+# P(B_{t+k}), a persistent state change from experience that alters
+# future behavior), or does the system only ever answer from content
+# match?
+#
+# Two facts of equal initial relevance and salience, about two
+# differently-named projects, phrased as near-mirror sentences so neither
+# has a content-level retrieval advantage on its own:
+#   nova-e1  - Project Nova's deploy window (the reinforced one)
+#   comet-e1 - Project Comet's deploy window (the control: never asked
+#              about again after this)
+#
+# nova-e1 is the gold answer to four early, specific questions, each one
+# reinforcing it on a correct hit. comet-e1 is never asked about. The
+# final question is deliberately ambiguous between the two - "the
+# Thursday 2pm deploy" names neither project - so a pure content-matching
+# system has no basis to prefer either; it is a genuine tie at the
+# content level. gold_event_ids on that question names the hypothesis
+# this dataset tests (that repeated use shifts the tie), not an
+# uncontroversial ground truth - a system with no reinforcement dynamics
+# is expected to split this close to evenly, not fail it outright.
+
+{"kind":"event","id":"nova-e1","content":"Project Nova's deployment window is Thursday 2pm UTC.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"orbit"},"source":"slack"}
+{"kind":"event","id":"comet-e1","content":"Project Comet's deployment window is Thursday 2pm UTC.","timestamp":"2026-01-01T09:05:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"orbit"},"source":"slack"}
+{"kind":"question","id":"nova-q1","query":"When does Project Nova deploy?","asked_at":"2026-01-03T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["nova-e1"],"gold_answer":"Thursday 2pm UTC."}
+{"kind":"question","id":"nova-q2","query":"What time is Nova's deployment window?","asked_at":"2026-01-05T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["nova-e1"],"gold_answer":"Thursday 2pm UTC."}
+{"kind":"question","id":"nova-q3","query":"When is Project Nova deploying?","asked_at":"2026-01-07T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["nova-e1"],"gold_answer":"Thursday 2pm UTC."}
+{"kind":"question","id":"nova-q4","query":"What's the deploy time for Nova?","asked_at":"2026-01-09T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["nova-e1"],"gold_answer":"Thursday 2pm UTC."}
+{"kind":"question","id":"consolidation-tie-break","query":"What's the Thursday 2pm deploy?","asked_at":"2026-01-10T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["nova-e1"],"gold_answer":"Project Nova's deployment window - the hypothesis under test, not an uncontroversial fact."}
