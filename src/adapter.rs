@@ -242,6 +242,12 @@ pub fn replay_stream_replicated(
         let mut system = build_system(index);
         let results = replay_stream(stream, system.as_mut(), top_k);
         for (i, result) in results.iter().enumerate() {
+            if std::env::var("COGNOSCENTI_DEBUG_REPLICATES").is_ok() {
+                eprintln!(
+                    "[replicate {index}] {} recall@{top_k}={:.4} retrieved={:?}",
+                    result.question_id, result.recall_at_k, result.retrieved_ids
+                );
+            }
             outcomes[i].push(result.recall_at_k >= 1.0);
         }
     }
