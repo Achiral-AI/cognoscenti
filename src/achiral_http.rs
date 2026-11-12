@@ -156,7 +156,25 @@ pub fn ingest_event_payload(event: &StreamEvent) -> Value {
         // `metadata`, which event_metadata() above also carries for
         // debugging but which achiral.ai never reads for this purpose.
         "supersedes": event.supersedes,
+        // Plan 26 review (achiral.ai, 2026-11-11): normalizeDeveloperEvent()
+        // now reads this and passes it to labelEvent(), which resolves it
+        // into a findable BusinessEntity (any entityType, not just a CRM
+        // customer/person) - without it, a stream's declared entities
+        // never reach the system at all, and CueExtractor seeds nothing.
+        "entityReferences": entity_references(event),
     })
+}
+
+fn entity_references(event: &StreamEvent) -> Value {
+    json!(event
+        .entities
+        .iter()
+        .map(|entity| json!({
+            "entityType": entity.entity_type,
+            "externalId": entity.external_id,
+            "displayName": entity.display_name,
+        }))
+        .collect::<Vec<_>>())
 }
 
 /// `POST /v1/memory/agents/{slug}`'s body (`remember`, achiral.ai
@@ -368,7 +386,39 @@ mod tests {
             },
             source: "test".to_string(),
             supersedes: None,
+            entities: Vec::new(),
         }
+    }
+
+    // Plan 26 review: achiral.ai's normalizeDeveloperEvent() now reads
+    // entityReferences (entityType/externalId/displayName) and passes it
+    // to labelEvent(), which resolves it into a findable BusinessEntity -
+    // without sending this, a stream's declared entities never reach the
+    // real system at all, no matter what stream.rs parses.
+    #[test]
+    fn ingest_event_payload_carries_declared_entities_as_entity_references() {
+        let mut event = org_event();
+        event.entities = vec![crate::stream::EntityReference {
+            external_id: "atlas".to_string(),
+            display_name: "Atlas".to_string(),
+            entity_type: "project".to_string(),
+        }];
+
+        let payload = ingest_event_payload(&event);
+        assert_eq!(
+            payload["entityReferences"],
+            serde_json::json!([{
+                "entityType": "project",
+                "externalId": "atlas",
+                "displayName": "Atlas",
+            }])
+        );
+    }
+
+    #[test]
+    fn ingest_event_payload_omits_entity_references_when_none_declared() {
+        let payload = ingest_event_payload(&org_event());
+        assert_eq!(payload["entityReferences"], serde_json::json!([]));
     }
 
     #[test]

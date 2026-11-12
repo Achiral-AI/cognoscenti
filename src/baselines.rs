@@ -405,6 +405,7 @@ mod tests {
             },
             source: "test".to_string(),
             supersedes: None,
+            entities: Vec::new(),
         }
     }
 

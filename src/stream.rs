@@ -39,6 +39,21 @@ pub struct Scope {
     pub id: String,
 }
 
+/// Declares which entity an event is about - achiral.ai's
+/// CueExtractor.extractEntities() matches a query against
+/// BusinessEntity.displayName, and the graph phases' "mentions" edges
+/// come from a memory's own entityIds, both traced back to this. Without
+/// it, a free-text event is never entity-linked at all (confirmed
+/// directly: every atlas-01 run left entityIds: [] on every document), so
+/// AGGR's graph traversal, activation and recursive expansion never ran
+/// on any stream lacking this field.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EntityReference {
+    pub external_id: String,
+    pub display_name: String,
+    pub entity_type: String,
+}
+
 /// One unit of recorded content. A fact change is an event whose
 /// `supersedes` names the event it replaces - there is no separate
 /// fact-change type, so superseding never needs a second, duplicate record
@@ -53,6 +68,8 @@ pub struct StreamEvent {
     pub source: String,
     #[serde(default)]
     pub supersedes: Option<String>,
+    #[serde(default)]
+    pub entities: Vec<EntityReference>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,5 +195,38 @@ mod tests {
     fn rejects_an_unknown_kind() {
         let error = Stream::from_jsonl(r#"{"kind":"fact_change","id":"f1"}"#).unwrap_err();
         assert!(error.to_string().contains("invalid stream item"));
+    }
+
+    // Plan 26 review: without a declared entity, achiral.ai's CueExtractor
+    // has nothing to seed graph traversal from (confirmed directly against
+    // the live system - every atlas-01 run left entityIds: [] on every
+    // document), so `entities` has to round-trip for a stream to be able
+    // to exercise AGGR's graph phases at all.
+    #[test]
+    fn parses_an_event_s_declared_entities() {
+        let stream = Stream::from_jsonl(
+            r#"{"kind":"event","id":"e1","content":"Atlas ships SSO first.","timestamp":"2026-01-01T00:00:00Z","actor":{"id":"alice","kind":"user"},"scope":{"kind":"org","id":"acme"},"source":"slack","entities":[{"external_id":"atlas","display_name":"Atlas","entity_type":"project"}]}"#,
+        )
+        .unwrap();
+
+        let e1 = stream.events().next().unwrap();
+        assert_eq!(
+            e1.entities,
+            vec![EntityReference {
+                external_id: "atlas".to_string(),
+                display_name: "Atlas".to_string(),
+                entity_type: "project".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn defaults_to_no_entities_when_absent() {
+        let e1 = stream_with(SAMPLE).events().next().unwrap().clone();
+        assert_eq!(e1.entities, Vec::<EntityReference>::new());
+    }
+
+    fn stream_with(input: &str) -> Stream {
+        Stream::from_jsonl(input).unwrap()
     }
 }
