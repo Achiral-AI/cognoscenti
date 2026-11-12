@@ -93,6 +93,11 @@ pub struct StreamQuestion {
     pub gold_answer: Option<String>,
     #[serde(default)]
     pub validity: Option<ValidityWindow>,
+    /// Plan 26 Phase 5: entity ids the corpus deliberately doesn't cover,
+    /// that a question names - tests whether a system's evidence graph
+    /// honestly discloses the gap rather than guessing.
+    #[serde(default)]
+    pub expected_gap_entity_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -224,6 +229,28 @@ mod tests {
     fn defaults_to_no_entities_when_absent() {
         let e1 = stream_with(SAMPLE).events().next().unwrap().clone();
         assert_eq!(e1.entities, Vec::<EntityReference>::new());
+    }
+
+    // Plan 26 Phase 5: a question that names an entity the corpus doesn't
+    // cover at all tests whether a system's evidence graph honestly
+    // discloses that, rather than silently returning its best (wrong)
+    // guess - a different claim than recall@k, which only ever measures
+    // whether existing content was found.
+    #[test]
+    fn parses_a_question_s_expected_gap_entity_ids() {
+        let stream = Stream::from_jsonl(
+            r#"{"kind":"question","id":"q1","query":"What does Northwind use?","asked_at":"2026-01-01T00:00:00Z","asked_by":{"id":"bob","kind":"user"},"gold_event_ids":[],"expected_gap_entity_ids":["northwind"]}"#,
+        )
+        .unwrap();
+
+        let q1 = stream.questions().next().unwrap();
+        assert_eq!(q1.expected_gap_entity_ids, vec!["northwind".to_string()]);
+    }
+
+    #[test]
+    fn defaults_to_no_expected_gaps_when_absent() {
+        let q1 = stream_with(SAMPLE).questions().next().unwrap().clone();
+        assert_eq!(q1.expected_gap_entity_ids, Vec::<String>::new());
     }
 
     fn stream_with(input: &str) -> Stream {

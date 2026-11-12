@@ -82,6 +82,23 @@ pub trait MemorySystem {
     /// (Plan 25: `advance(now)` / `settle()`). A no-op for every system
     /// that does not declare `capabilities().settle`.
     fn settle(&mut self, _now: DateTime<Utc>) {}
+
+    /// Entity ids (or display names) the system's own evidence graph
+    /// reports as an unresolved gap for this query (Plan 26 Phase 5) - a
+    /// different claim than `retrieve`: not "what did you find" but "what
+    /// did you honestly admit you didn't". An empty Vec from a system that
+    /// does not declare `capabilities().evidence_graph` is not a reported
+    /// gap, since nothing asked it for one - callers must check the
+    /// capability before scoring this as a failure.
+    fn evidence_graph_gaps(
+        &mut self,
+        _query: &str,
+        _actor: &Actor,
+        _now: DateTime<Utc>,
+        _top_k: usize,
+    ) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// Adapter contract v2's optional operations (Plan 25): which of
@@ -89,12 +106,15 @@ pub trait MemorySystem {
 /// beyond the required `ingest`/`retrieve`. A system that does not accept
 /// a simulated clock (no `settle` support) runs on wall-clock time; that is
 /// fair for systems without decay, and the run manifest records which mode
-/// each system used.
+/// each system used. `evidence_graph` (Plan 26 Phase 5) is a separate
+/// claim from any of these: whether `evidence_graph_gaps` reports anything
+/// real for this system.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Capabilities {
     pub answer: bool,
     pub use_feedback: bool,
     pub settle: bool,
+    pub evidence_graph: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +132,12 @@ pub struct QuestionResult {
     /// same order as `retrieved_ids` - calibration's raw input once
     /// matched against `gold_event_ids` (see `calibration_pairs`).
     pub scored_candidates: Vec<(String, f64)>,
+    /// Plan 26 Phase 5: the fraction of this question's
+    /// `expected_gap_entity_ids` the system's evidence graph actually
+    /// disclosed. `None` when the question expects no gaps, or the
+    /// system doesn't declare `capabilities().evidence_graph` - neither
+    /// case is evidence of anything, so neither is scored as 0 or 1.
+    pub gap_disclosure: Option<f64>,
 }
 
 /// Turns a question's `scored_candidates` into the `(score, was_gold)`
@@ -202,11 +228,35 @@ pub fn replay_stream(
                         .filter_map(|id| content_by_id.get(id.as_str()))
                         .map(|content| approx_token_count(content))
                         .sum::<usize>();
+                // Plan 26 Phase 5: only call (and only score) this when
+                // both sides opted in - a question with nothing to expect
+                // and a system with nothing to report are both silence,
+                // not failure.
+                let gap_disclosure = if question.expected_gap_entity_ids.is_empty()
+                    || !system.capabilities().evidence_graph
+                {
+                    None
+                } else {
+                    let reported = system.evidence_graph_gaps(
+                        &question.query,
+                        &question.asked_by,
+                        question.asked_at,
+                        top_k,
+                    );
+                    let reported: HashSet<&str> = reported.iter().map(String::as_str).collect();
+                    let disclosed = question
+                        .expected_gap_entity_ids
+                        .iter()
+                        .filter(|id| reported.contains(id.as_str()))
+                        .count();
+                    Some(disclosed as f64 / question.expected_gap_entity_ids.len() as f64)
+                };
                 results.push(QuestionResult {
                     question_id: question.id.clone(),
                     retrieved_ids,
                     recall_at_k: recall,
                     tokens_injected,
+                    gap_disclosure,
                     scored_candidates,
                 });
             }
@@ -408,8 +458,12 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
 
         println!("=== {name} ===");
         for result in &results {
+            let gap_suffix = match result.gap_disclosure {
+                Some(fraction) => format!(", gap disclosure = {fraction:.2}"),
+                None => String::new(),
+            };
             println!(
-                "  {}: recall@{} = {:.2}, tokens injected = {}",
+                "  {}: recall@{} = {:.2}, tokens injected = {}{gap_suffix}",
                 result.question_id, config.top_k, result.recall_at_k, result.tokens_injected
             );
         }
@@ -420,6 +474,19 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             mean_recall,
             mean_tokens
         );
+
+        // Plan 26 Phase 5: only questions that declared an expected gap
+        // and a system that declared evidence_graph support produce a
+        // Some(...) here - only those count toward this mean, so a
+        // dataset with no gap questions prints nothing misleading.
+        let gap_scores: Vec<f64> = results.iter().filter_map(|r| r.gap_disclosure).collect();
+        if !gap_scores.is_empty() {
+            let mean_gap_disclosure = gap_scores.iter().sum::<f64>() / gap_scores.len() as f64;
+            println!(
+                "  mean gap disclosure over {} question(s): {mean_gap_disclosure:.4}",
+                gap_scores.len()
+            );
+        }
 
         let trials = leak_trials(&stream, &results);
         if !trials.is_empty() {
@@ -554,6 +621,7 @@ mod tests {
                     gold_event_ids: vec!["e1".to_string()],
                     gold_answer: None,
                     validity: None,
+                    expected_gap_entity_ids: Vec::new(),
                 }),
                 StreamItem::Event(event("e2", "2026-02-01T00:00:00Z")),
             ],
@@ -587,6 +655,7 @@ mod tests {
                     gold_event_ids: vec!["e1".to_string()],
                     gold_answer: None,
                     validity: None,
+                    expected_gap_entity_ids: Vec::new(),
                 }),
             ],
         };
@@ -616,6 +685,7 @@ mod tests {
                     gold_event_ids: vec!["e1".to_string()],
                     gold_answer: None,
                     validity: None,
+                    expected_gap_entity_ids: Vec::new(),
                 }),
             ],
         };
@@ -639,6 +709,7 @@ mod tests {
             recall_at_k: 0.0,
             tokens_injected: 0,
             scored_candidates: vec![("e1".to_string(), 0.9), ("e2".to_string(), 0.4)],
+            gap_disclosure: None,
         };
 
         let pairs = calibration_pairs(&result, &["e2".to_string()]);
@@ -661,6 +732,7 @@ mod tests {
                     gold_event_ids: vec!["e1".to_string()],
                     gold_answer: None,
                     validity: None,
+                    expected_gap_entity_ids: Vec::new(),
                 }),
             ],
         };
@@ -716,6 +788,7 @@ mod tests {
                     gold_event_ids: vec!["e1".to_string()],
                     gold_answer: None,
                     validity: None,
+                    expected_gap_entity_ids: Vec::new(),
                 }),
             ],
         };
@@ -748,6 +821,7 @@ mod tests {
             gold_event_ids: vec![],
             gold_answer: None,
             validity: None,
+            expected_gap_entity_ids: Vec::new(),
         }
     }
 
@@ -897,6 +971,111 @@ mod tests {
         );
     }
 
+    struct EvidenceGraphSpy {
+        reported_gaps: Vec<String>,
+    }
+
+    impl MemorySystem for EvidenceGraphSpy {
+        fn name(&self) -> &str {
+            "evidence-graph-spy"
+        }
+        fn ingest(&mut self, _event: &StreamEvent) {}
+        fn retrieve(
+            &mut self,
+            _query: &str,
+            _actor: &Actor,
+            _now: DateTime<Utc>,
+            _top_k: usize,
+        ) -> Vec<String> {
+            Vec::new()
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                evidence_graph: true,
+                ..Default::default()
+            }
+        }
+        fn evidence_graph_gaps(
+            &mut self,
+            _query: &str,
+            _actor: &Actor,
+            _now: DateTime<Utc>,
+            _top_k: usize,
+        ) -> Vec<String> {
+            self.reported_gaps.clone()
+        }
+    }
+
+    fn question_with_expected_gaps(id: &str, expected: Vec<&str>) -> crate::stream::StreamQuestion {
+        crate::stream::StreamQuestion {
+            id: id.to_string(),
+            query: "irrelevant".to_string(),
+            asked_at: "2026-01-15T00:00:00Z".parse().unwrap(),
+            asked_by: Actor {
+                id: "a".to_string(),
+                kind: ActorKind::User,
+            },
+            gold_event_ids: vec![],
+            gold_answer: None,
+            validity: None,
+            expected_gap_entity_ids: expected.into_iter().map(str::to_string).collect(),
+        }
+    }
+
+    // Plan 26 Phase 5: a question with no expected gaps has nothing to
+    // score here - None, not a misleading perfect (or zero) score.
+    #[test]
+    fn gap_disclosure_is_none_when_the_question_expects_no_gaps() {
+        let stream = Stream {
+            items: vec![StreamItem::Question(question_asked_by("q1", "pm"))],
+        };
+        let mut system = EvidenceGraphSpy {
+            reported_gaps: vec!["northwind".to_string()],
+        };
+
+        let results = replay_stream(&stream, &mut system, 3);
+
+        assert_eq!(results[0].gap_disclosure, None);
+    }
+
+    // A system that never declares evidence_graph support must not be
+    // scored on it either - its default evidence_graph_gaps() returning
+    // an empty Vec is not evidence the system failed to disclose a gap,
+    // only that nothing asked it to.
+    #[test]
+    fn gap_disclosure_is_none_for_a_system_that_does_not_support_evidence_graphs() {
+        let stream = Stream {
+            items: vec![StreamItem::Question(question_with_expected_gaps(
+                "q1",
+                vec!["northwind"],
+            ))],
+        };
+        let mut system = SettleSpy {
+            settled_at: Vec::new(),
+        };
+
+        let results = replay_stream(&stream, &mut system, 3);
+
+        assert_eq!(results[0].gap_disclosure, None);
+    }
+
+    #[test]
+    fn gap_disclosure_is_the_fraction_of_expected_gaps_actually_reported() {
+        let stream = Stream {
+            items: vec![StreamItem::Question(question_with_expected_gaps(
+                "q1",
+                vec!["northwind", "beacon"],
+            ))],
+        };
+        let mut system = EvidenceGraphSpy {
+            reported_gaps: vec!["northwind".to_string()],
+        };
+
+        let results = replay_stream(&stream, &mut system, 3);
+
+        assert_eq!(results[0].gap_disclosure, Some(0.5));
+    }
+
     #[test]
     fn build_system_still_resolves_a_known_baseline_by_name() {
         let system = build_system("verbatim", 30.0, 10).expect("verbatim is a known baseline");
@@ -948,6 +1127,29 @@ mod tests {
         assert!(!Capabilities::default().answer);
         assert!(!Capabilities::default().use_feedback);
         assert!(!Capabilities::default().settle);
+        assert!(!Capabilities::default().evidence_graph);
+    }
+
+    // Plan 26 Phase 5: a system with no evidence-graph support must not
+    // be scored on gap disclosure at all (not scored as a failure) - an
+    // empty Vec from the default `evidence_graph_gaps` is not evidence of
+    // anything, since nothing asked the system for it.
+    #[test]
+    fn a_system_with_no_evidence_graph_override_reports_no_gaps() {
+        let mut system = SeenSoFar { seen: Vec::new() };
+        let actor = Actor {
+            id: "a".to_string(),
+            kind: ActorKind::User,
+        };
+        assert_eq!(
+            system.evidence_graph_gaps(
+                "irrelevant",
+                &actor,
+                "2026-01-01T00:00:00Z".parse().unwrap(),
+                3
+            ),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

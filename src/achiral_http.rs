@@ -226,6 +226,35 @@ pub fn retrieve_payload(query: &str, top_k: usize) -> Value {
     json!({ "query": query, "limit": top_k })
 }
 
+/// `POST /v1/memory/retrieve`'s body for a Plan 26 Phase 5 evidence-graph
+/// request - the same endpoint, query and `top_k` as `retrieve_payload`,
+/// with one extra opt-in flag achiral.ai only honors under `aggr` mode.
+/// `top_k` as `limit` is not optional here: without it, achiral.ai's
+/// default limit lets more documents into the merged pool than the real
+/// retrieve ever sees, so `unresolvedGaps` would be computed against a
+/// different, larger result set than the one actually being evaluated.
+pub fn evidence_graph_payload(query: &str, top_k: usize) -> Value {
+    json!({ "query": query, "limit": top_k, "includeEvidenceGraph": true })
+}
+
+/// `evidenceGraph.unresolvedGaps[].displayName` - `entityId` is a Mongo
+/// ObjectId assigned at write time, unknowable to a dataset author ahead
+/// of time; `displayName` is the one stable field a dataset's own
+/// `entities[].display_name` can be compared against directly.
+pub fn parse_unresolved_gap_display_names(value: &Value) -> Vec<String> {
+    value
+        .get("evidenceGraph")
+        .and_then(|evidence_graph| evidence_graph.get("unresolvedGaps"))
+        .and_then(Value::as_array)
+        .map(|gaps| {
+            gaps.iter()
+                .filter_map(|gap| gap.get("displayName").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Simulated time for achiral.ai's `recall`/`reinforce` eval-mode override
 /// (`X-Achiral-Eval-Now`, ISO 8601) - the public memory API takes it as a
 /// header, not a body field, confirmed 2026-11-08. Server-side, it's
@@ -307,6 +336,7 @@ impl MemorySystem for AchiralHttpSystem {
     fn capabilities(&self) -> crate::adapter::Capabilities {
         crate::adapter::Capabilities {
             settle: true,
+            evidence_graph: true,
             ..Default::default()
         }
     }
@@ -333,6 +363,21 @@ impl MemorySystem for AchiralHttpSystem {
             .into_iter()
             .take(top_k)
             .collect()
+    }
+
+    fn evidence_graph_gaps(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        let url = retrieve_url(&self.base_url, actor);
+        let payload = evidence_graph_payload(query, top_k);
+        let headers = [eval_now_header(now)];
+        let response = run_json_post(&url, self.api_key.as_deref(), &headers, &payload)
+            .unwrap_or_else(|err| panic!("achiral evidence graph retrieve failed: {err:#}"));
+        parse_unresolved_gap_display_names(&response)
     }
 }
 
@@ -467,6 +512,59 @@ mod tests {
         let payload = retrieve_payload("where is it", 5);
         assert_eq!(payload["query"], "where is it");
         assert_eq!(payload["limit"], 5);
+    }
+
+    // Plan 26 Phase 5: the evidence-graph retrieve call is the same
+    // endpoint as a normal retrieve, with one extra opt-in flag - never
+    // sent on an ordinary retrieve, so it costs no existing caller
+    // anything.
+    #[test]
+    fn evidence_graph_payload_carries_query_and_the_opt_in_flag() {
+        let payload = evidence_graph_payload("where is it", 3);
+        assert_eq!(payload["query"], "where is it");
+        assert_eq!(payload["includeEvidenceGraph"], true);
+    }
+
+    // Root-cause fix: without this, achiral.ai's default limit (larger
+    // than top_k) let more documents into the merged result set than the
+    // real retrieve_scored() call ever sees, so unresolvedGaps was
+    // computed against a different, bigger pool - confirmed live: a gap
+    // that correctly disappeared at limit=3 reappeared as "resolved" the
+    // moment limit was omitted, because the missing entity's own (barely
+    // relevant) content fit in the larger pool.
+    #[test]
+    fn evidence_graph_payload_carries_the_same_top_k_as_limit() {
+        let payload = evidence_graph_payload("where is it", 3);
+        assert_eq!(payload["limit"], 3);
+    }
+
+    // displayName, not entityId: PublicMemoryService's CueExtractor
+    // assigns entityId from a Mongo ObjectId, generated at write time and
+    // unknowable to a dataset author ahead of time - displayName is the
+    // one stable field a dataset's own `entities[].display_name` can be
+    // compared against directly.
+    #[test]
+    fn parse_unresolved_gap_display_names_reads_each_gap_s_display_name() {
+        let response = json!({
+            "evidenceGraph": {
+                "unresolvedGaps": [
+                    {"entityId": "64f...", "displayName": "Northwind Sync"}
+                ]
+            }
+        });
+        assert_eq!(
+            parse_unresolved_gap_display_names(&response),
+            vec!["Northwind Sync".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_unresolved_gap_display_names_is_empty_with_no_evidence_graph_in_the_response() {
+        let response = json!({"data": []});
+        assert_eq!(
+            parse_unresolved_gap_display_names(&response),
+            Vec::<String>::new()
+        );
     }
 
     #[test]

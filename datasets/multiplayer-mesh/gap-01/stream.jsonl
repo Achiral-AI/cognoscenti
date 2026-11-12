@@ -1,0 +1,38 @@
+# gap-01: a direct test of Plan 26 Phase 5's gap disclosure - "if a gap
+# below is unresolved, say so rather than guessing" (EVIDENCE_GRAPH_
+# PROMPT_INSTRUCTIONS). Distinct from recall@k, which only ever measures
+# whether existing content was found: this measures whether the system
+# honestly admits when a named entity has nothing relevant covering it,
+# instead of silently answering only the part it can.
+#
+# The question names two entities: atlas-project (well covered, five
+# events) and beacon-project (declared, so CueExtractor can find it as a
+# real cue - four events mention it, none relevant to this question).
+#
+# First draft used a single Beacon event. Dropped before trusting any
+# result: `fanAttenuatedStrength(fan)` = 1/(1+(fan-1)^2) gives a
+# uniquely-mentioned entity (fan=1) the maximum possible spreading
+# score (1.0), and GRAPH_DISCOVERY_WEIGHT adds that directly and
+# undiluted to _memoryScore - so a single Beacon mention ranked first by
+# a wide margin, confirmed live. Structurally, that's correct behavior
+# (finding the one thing that exists about a rare, specifically-named
+# entity should rank highly), not a bug - but it means a single mention
+# is never a real "gap" case for this mechanism. Four Beacon events
+# bring its fan to a strength the atlas-project cue's own fan (5 events,
+# ~0.06) is already comparable to, so the real discriminator becomes
+# semantic relevance, where these four score near zero against this
+# question.
+#
+# All events share one timestamp, learning the same lesson atlas-02 did -
+# recency differences would confound which events win the top-3 slots.
+
+{"kind":"event","id":"e1","content":"Atlas's SSO rollout now covers the first batch of pilot customers.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e2","content":"Atlas's SSO rollout plan was reviewed by the security team this week.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"sec-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e3","content":"Atlas's SSO rollout communications draft is ready for the customer-facing changelog.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"pm","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"docs","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e4","content":"Atlas's SSO rollout test plan now covers the enterprise SAML edge cases QA flagged.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"qa-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e5","content":"Atlas's SSO rollout budget for vendor integration work is set for this quarter.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"finance-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e6","content":"Beacon's quarterly spending review happened last week, unrelated to any rollout.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"finance-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"beacon-project","display_name":"Beacon","entity_type":"project"}]}
+{"kind":"event","id":"e7","content":"Beacon's office seating chart was updated after the floor move.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"ops-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"beacon-project","display_name":"Beacon","entity_type":"project"}]}
+{"kind":"event","id":"e8","content":"Beacon's catering order for the town hall was confirmed with the vendor.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"ops-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"beacon-project","display_name":"Beacon","entity_type":"project"}]}
+{"kind":"event","id":"e9","content":"Beacon's parking permit renewal was mailed to the building office.","timestamp":"2026-04-07T09:00:00Z","actor":{"id":"ops-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"beacon-project","display_name":"Beacon","entity_type":"project"}]}
+{"kind":"question","id":"gap-q-beacon","query":"What's the status of Atlas's SSO rollout, and is Beacon's project affected too?","asked_at":"2026-04-10T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["e1"],"gold_answer":"Atlas's SSO rollout now covers the first batch of pilot customers; nothing ties Beacon to it.","expected_gap_entity_ids":["Beacon"]}
