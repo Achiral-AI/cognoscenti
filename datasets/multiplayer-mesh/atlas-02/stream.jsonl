@@ -1,0 +1,36 @@
+# atlas-02: a direct test of AGGR's recursive cue expansion (Plan 26
+# Phase 6) - the case Phase 6 exists for and atlas-01 never exercises
+# (its three questions all resolve from the query's own seed entity in
+# one hop). The gold answer here is reachable only by discovering a
+# second entity from a first-hop memory, then traversing from it.
+#
+#   e1 (bridge)   - mentions BOTH atlas-project and northwind-sync. The
+#                   only document CueExtractor's "atlas" seed can reach
+#                   directly.
+#   e2,e4,e5,e6   - decoys, mentioning atlas-project only, each sharing
+#                   "Atlas"/"SSO"/"rollout" with the question. A
+#                   content-only retriever (hybrid search, vector
+#                   search) has every lexical reason to rank one of
+#                   these in the top 3 - each is still the wrong answer.
+#   e3 (gold)     - mentions northwind-sync only, never "Atlas", "SSO"
+#                   or "rollout" at all. Reachable only by: seed
+#                   atlas-project -> e1 -> discover northwind-sync -> e3.
+#                   One hop short of this, the correct answer is
+#                   unreachable by construction, and lexically it has
+#                   nothing pulling it into a content-only top 3 either.
+#
+# A system that only does single-pass graph traversal (Phases 1-4
+# without Phase 6) finds e1 and stops - northwind-sync is never tried as
+# a seed, because nothing re-runs the graph build from a node discovered
+# mid-traversal. A system with Phase 6 wired in re-seeds from e1's own
+# entities and reaches e3 in round two. Six decoys plus the bridge and
+# gold event make top_k=3 a real cut, not a trivial "return everything."
+
+{"kind":"event","id":"e1","content":"Atlas's SSO rollout now depends on Northwind Sync's new federation API; integration work starts once their v2 ships.","timestamp":"2026-02-01T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"},{"external_id":"northwind-sync","display_name":"Northwind Sync","entity_type":"system"}]}
+{"kind":"event","id":"e2","content":"Atlas's SSO rollout is tracked on the engineering roadmap for Q2.","timestamp":"2026-02-02T10:00:00Z","actor":{"id":"pm","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e3","content":"Northwind Sync confirmed their federation API v2 ships November 30.","timestamp":"2026-02-03T14:00:00Z","actor":{"id":"vendor-mgr","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"northwind-sync","display_name":"Northwind Sync","entity_type":"system"}]}
+{"kind":"event","id":"e4","content":"Atlas's SSO rollout plan was reviewed in yesterday's staff meeting; no blockers were raised.","timestamp":"2026-02-04T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e5","content":"Atlas's SSO rollout communications draft is ready for the customer-facing changelog.","timestamp":"2026-02-05T11:00:00Z","actor":{"id":"pm","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"docs","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e6","content":"Atlas's SSO rollout test plan now covers the enterprise SAML edge cases QA flagged.","timestamp":"2026-02-06T13:00:00Z","actor":{"id":"qa-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"e7","content":"Atlas's SSO rollout budget for vendor integration work is set for this quarter.","timestamp":"2026-02-07T15:00:00Z","actor":{"id":"finance-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"question","id":"atlas-q-northwind","query":"When can Atlas's SSO rollout actually start?","asked_at":"2026-02-10T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["e3"],"gold_answer":"Once Northwind Sync's federation API v2 ships, November 30."}
