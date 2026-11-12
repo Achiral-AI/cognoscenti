@@ -1,0 +1,47 @@
+# atlas-03: a second, structurally different test of AGGR's recursive
+# cue expansion (Plan 26 Phase 6) - deliberately not a copy of atlas-02,
+# so a weight tuned on one case isn't mistaken for a weight that
+# generalizes.
+#
+# The one structural difference from atlas-02: three hops, not two. The
+# query's own seed entity (harbor-project) never reaches the gold entity
+# (quarry-system) directly or even in one bridge - it takes two bridges
+# (e1 then e2), hitting MAX_EXPANSION_ROUNDS's current cap of 3 rounds
+# exactly. Everything else (fan shape, decoy count, decoy phrasing style)
+# deliberately matches atlas-02, so this isolates depth as the one new
+# variable.
+#
+# An earlier draft also widened quarry-system's fan to 3 (an extra decoy
+# event mentioning it, unreachable from harbor-project) to test a worse
+# fan shape at the same time. Dropped: that extra decoy shared the exact
+# same spreading-activation value as the gold (same fan, same entity), so
+# no weight could ever separate them - the residual gap was pure
+# embedding noise on near-zero-overlap short sentences, not a graph
+# signal any weight sweep can act on. Confounding two variables at once
+# also would have made a failure here impossible to attribute to either
+# one. Left as a separate, future dataset if fan shape needs its own test.
+#
+#   e1 (bridge 1) - mentions harbor-project and signal-relay. The only
+#                   document reachable directly from the query's seed.
+#   e2 (bridge 2) - mentions signal-relay and quarry-system. Reachable
+#                   only after e1 discovers signal-relay in round 2.
+#   e3 (gold)     - mentions quarry-system only, never "Harbor",
+#                   "rollout", "Signal Relay", or any query word.
+#                   Reachable only in round 3, seeded from quarry-system
+#                   (discovered via e2 in round 2).
+#   e4-e8 (decoys)- mention harbor-project only, each sharing
+#                   "Harbor"/"rollout" with the question.
+#
+# All eight events share one timestamp - atlas-02 taught this the hard
+# way: a dataset not controlled for recency confounds the very signal
+# it's built to test.
+
+{"kind":"event","id":"e1","content":"Harbor's rollout now depends on Signal Relay's new sync service going live.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"harbor-project","display_name":"Harbor","entity_type":"project"},{"external_id":"signal-relay","display_name":"Signal Relay","entity_type":"system"}]}
+{"kind":"event","id":"e2","content":"Signal Relay's sync service needs Quarry System's archival API migration to finish first.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"signal-relay","display_name":"Signal Relay","entity_type":"system"},{"external_id":"quarry-system","display_name":"Quarry System","entity_type":"system"}]}
+{"kind":"event","id":"e3","content":"Quarry System confirmed their archival API migration completes January 15.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"vendor-mgr","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"quarry-system","display_name":"Quarry System","entity_type":"system"}]}
+{"kind":"event","id":"e4","content":"Harbor's rollout plan was reviewed in yesterday's staff meeting; no issues came up.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"harbor-project","display_name":"Harbor","entity_type":"project"}]}
+{"kind":"event","id":"e5","content":"Harbor's rollout communications draft is ready for the customer-facing changelog.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"pm","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"docs","entities":[{"external_id":"harbor-project","display_name":"Harbor","entity_type":"project"}]}
+{"kind":"event","id":"e6","content":"Harbor's rollout test plan now covers the enterprise SAML edge cases QA flagged.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"qa-lead","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"harbor-project","display_name":"Harbor","entity_type":"project"}]}
+{"kind":"event","id":"e7","content":"Harbor's rollout budget for vendor integration work is set for this quarter.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"finance-lead","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"harbor-project","display_name":"Harbor","entity_type":"project"}]}
+{"kind":"event","id":"e8","content":"Harbor's rollout is tracked on the engineering roadmap for Q2.","timestamp":"2026-03-07T09:00:00Z","actor":{"id":"pm","kind":"user"},"scope":{"kind":"org","id":"harbor"},"source":"slack","entities":[{"external_id":"harbor-project","display_name":"Harbor","entity_type":"project"}]}
+{"kind":"question","id":"harbor-q-quarry","query":"When will Harbor's rollout actually be ready?","asked_at":"2026-03-10T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["e3"],"gold_answer":"Once Quarry System's archival API migration completes, January 15."}
