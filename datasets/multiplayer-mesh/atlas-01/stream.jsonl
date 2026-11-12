@@ -6,12 +6,22 @@
 #   auth-*   - a VP suggestion vs. an explicit, documented decision
 #              (authority hard-negative control: seniority must not
 #              outrank a later, explicit, lower-rank correction)
+#
+# Every event below declares the same atlas-project entity (Plan 26
+# review, 2026-11-12): without it, achiral.ai's CueExtractor has nothing
+# to seed graph traversal from, and every question here names "Atlas", so
+# this dataset's own "aggr" benchmark runs were never actually exercising
+# Phases 2-4's graph/activation machinery - confirmed directly against
+# the live system (every run this session left entityIds: [] on every
+# document). One shared entity across a plain supersession chain, with no
+# second entity to discover, so this still cannot exercise Phase 6's
+# recursion (see atlas-02 for that) - it only lets Phases 2-4 run at all.
 
-{"kind":"event","id":"atlas-e1","content":"Decided Atlas auth ships magic-link login first; SSO stays behind the enterprise flag.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack"}
-{"kind":"event","id":"auth-e1","content":"VP of Product, in a hallway aside, floated killing magic-link entirely and going SSO-only for Atlas.","timestamp":"2026-01-06T10:00:00Z","actor":{"id":"vp-product","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack"}
-{"kind":"event","id":"auth-e2","content":"Eng lead's design doc: magic-link ships first per the Atlas RFC; the VP's SSO-only suggestion was discussed and explicitly not adopted, since enterprise customers need SSO as an option, not a requirement.","timestamp":"2026-01-07T16:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"docs","supersedes":"auth-e1"}
-{"kind":"event","id":"atlas-e2","content":"Support confirmed password-reset tickets are no longer the Atlas rollout blocker.","timestamp":"2026-01-11T14:00:00Z","actor":{"id":"support-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack"}
+{"kind":"event","id":"atlas-e1","content":"Decided Atlas auth ships magic-link login first; SSO stays behind the enterprise flag.","timestamp":"2026-01-01T09:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"auth-e1","content":"VP of Product, in a hallway aside, floated killing magic-link entirely and going SSO-only for Atlas.","timestamp":"2026-01-06T10:00:00Z","actor":{"id":"vp-product","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"auth-e2","content":"Eng lead's design doc: magic-link ships first per the Atlas RFC; the VP's SSO-only suggestion was discussed and explicitly not adopted, since enterprise customers need SSO as an option, not a requirement.","timestamp":"2026-01-07T16:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"docs","supersedes":"auth-e1","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
+{"kind":"event","id":"atlas-e2","content":"Support confirmed password-reset tickets are no longer the Atlas rollout blocker.","timestamp":"2026-01-11T14:00:00Z","actor":{"id":"support-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
 {"kind":"question","id":"atlas-q-15d","query":"What's shipping first for Atlas auth?","asked_at":"2026-01-16T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["atlas-e1"],"gold_answer":"Magic-link login first, SSO behind the enterprise flag."}
 {"kind":"question","id":"auth-q-20d","query":"Did the VP's suggestion to go SSO-only for Atlas get adopted?","asked_at":"2026-01-21T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["auth-e2"],"gold_answer":"No - the eng lead explicitly decided magic-link ships first; the VP's SSO-only suggestion was considered and not adopted."}
-{"kind":"event","id":"atlas-e3","content":"Reversed course: Atlas now ships SSO first, magic-link delayed to next quarter.","timestamp":"2026-01-23T11:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","supersedes":"atlas-e1"}
+{"kind":"event","id":"atlas-e3","content":"Reversed course: Atlas now ships SSO first, magic-link delayed to next quarter.","timestamp":"2026-01-23T11:00:00Z","actor":{"id":"eng-lead","kind":"user"},"scope":{"kind":"org","id":"atlas"},"source":"slack","supersedes":"atlas-e1","entities":[{"external_id":"atlas-project","display_name":"Atlas","entity_type":"project"}]}
 {"kind":"question","id":"atlas-q-30d","query":"What's shipping first for Atlas auth?","asked_at":"2026-01-31T09:00:00Z","asked_by":{"id":"pm","kind":"user"},"gold_event_ids":["atlas-e3"],"gold_answer":"SSO first, magic-link delayed to next quarter."}
