@@ -1,7 +1,7 @@
 {
   "title": "Cognoscenti: A Benchmark for Trustworthy AI Memory",
   "upload_type": "software",
-  "description": "Cognoscenti is a benchmark for probabilistic, non-deterministic AI memory. It scores memory behavior along three axes of trustworthiness &mdash; calibration (does stated confidence mean anything), stability (does it agree with itself when repeated), and scope (does it respect the boundaries it's told) &mdash; through a deterministic, seeded stream-eval harness with an ACT-R reference, five stability tests, and token accounting for a learning-vs-static tokens-over-time hypothesis. No live run against a vendor or Achiral system has been published yet; the Measurement framework diagrams in the README are schematics of the method, not results.<br><br>Public benchmark page: <a href=\"https://achiral.ai/benchmarks/ai-memory-benchmark\">https://achiral.ai/benchmarks/ai-memory-benchmark</a><br>Figshare preprint and reproducibility bundle (pre-dates this version's trust-axis framing; a refreshed preprint is pending): <a href=\"https://doi.org/10.6084/m9.figshare.33288195\">https://doi.org/10.6084/m9.figshare.33288195</a><br>Software Heritage source archive (pending a fresh snapshot for this version): <a href=\"https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7\">swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7</a>",
+  "description": "Cognoscenti is a benchmark for probabilistic, non-deterministic AI memory. It scores memory behavior along three axes of trustworthiness &mdash; calibration (does stated confidence mean anything), stability (does it agree with itself when repeated), and scope (does it respect the boundaries it's told) &mdash; through a deterministic, seeded stream-eval harness with an ACT-R reference, five stability tests, and token accounting for a learning-vs-static tokens-over-time hypothesis. No live run against a vendor or Achiral system has been published yet; the Measurement framework diagrams in the README are schematics of the method, not results.<br><br>Public benchmark page: <a href=\"https://achiral.ai/benchmarks/ai-memory-benchmark\">https://achiral.ai/benchmarks/ai-memory-benchmark</a><br>Figshare preprint and reproducibility bundle (pre-dates this version's trust-axis framing; a refreshed preprint is pending): <a href=\"https://doi.org/10.6084/m9.figshare.33288195\">https://doi.org/10.6084/m9.figshare.33288195</a><br>Software Heritage source archive: <a href=\"https://archive.softwareheritage.org/swh:1:snp:5b87eaaef416c6828bbb6b775d10d674494390d2\">swh:1:snp:5b87eaaef416c6828bbb6b775d10d674494390d2</a>",
   "creators": [
     {
       "name": "Achiral AI",
@@ -37,7 +37,7 @@
       "scheme": "doi"
     },
     {
-      "identifier": "https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7",
+      "identifier": "https://archive.softwareheritage.org/swh:1:snp:5b87eaaef416c6828bbb6b775d10d674494390d2",
       "relation": "isSupplementedBy",
       "scheme": "url"
     }

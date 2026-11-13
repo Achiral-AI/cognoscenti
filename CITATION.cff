@@ -40,6 +40,6 @@ references:
     title: "Cognoscenti Software Heritage Snapshot"
     authors:
       - name: "Achiral AI"
-    date-released: "2026-08-19"
-    url: "https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7"
-    notes: "Software Heritage source-code preservation snapshot for the Cognoscenti Git origin."
+    date-released: "2026-11-13"
+    url: "https://archive.softwareheritage.org/swh:1:snp:5b87eaaef416c6828bbb6b775d10d674494390d2"
+    notes: "Software Heritage source-code preservation snapshot for the Cognoscenti Git origin, taken at v0.3.0."

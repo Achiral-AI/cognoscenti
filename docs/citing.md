@@ -10,7 +10,7 @@ Concept DOI (always resolves to the latest version): [10.5281/zenodo.21995303](h
 
 Figshare preprint and reproducibility bundle DOI: [10.6084/m9.figshare.33288195](https://doi.org/10.6084/m9.figshare.33288195)
 
-Software Heritage source archive: [`swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7`](https://archive.softwareheritage.org/swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c0137d7)
+Software Heritage source archive: [`swh:1:snp:5b87eaaef416c6828bbb6b775d10d674494390d2`](https://archive.softwareheritage.org/swh:1:snp:5b87eaaef416c6828bbb6b775d10d674494390d2)
 
 ```bibtex
 @software{achiral_ai_2026_cognoscenti,
