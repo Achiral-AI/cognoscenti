@@ -40,14 +40,26 @@ use serde_json::{json, Value};
 pub struct AchiralHttpSystem {
     base_url: String,
     api_key: Option<String>,
-    /// How long settle() waits for achiral.ai's asynchronous write cycle
-    /// (ingest only stages a candidate; a separate cycle writes it to the
-    /// store) to catch up before the next question is asked. 0 by
-    /// default - a real production deployment's write cycle runs on
-    /// minutes, which no settle() wait could make synchronous anyway, so
-    /// this is an explicit opt-in for a benchmark deployment tuned for a
-    /// fast cycle, not a default behavior change.
+    /// The longest settle() will wait for achiral.ai's asynchronous write
+    /// cycle (ingest only stages a candidate; a separate cycle writes it
+    /// to the store) to confirm every org-scope event ingested so far has
+    /// actually reached Weaviate, polling `event_status_payload` rather
+    /// than blindly sleeping - a blind sleep raced the real,
+    /// congestion-dependent write latency and sometimes lost (confirmed
+    /// live: 578ms-11,114ms for logically identical events, purely a
+    /// function of how many other organizations shared that write
+    /// tick's queue). 0 by default - a real production deployment's
+    /// write cycle runs on minutes, which no settle() wait could make
+    /// synchronous anyway, so this stays an explicit opt-in for a
+    /// benchmark deployment tuned for a fast cycle, not a default
+    /// behavior change.
     settle_ms: u64,
+    /// Org-scope events ingested since the last successful settle(),
+    /// identified by the `businessEventId` achiral.ai's own ingest
+    /// response returns - what settle() polls achiral.ai to confirm.
+    /// Agent-scope `remember` writes are synchronous already (no triage
+    /// lag), so `ingest()` never adds to this for an agent-scope event.
+    unconfirmed_business_event_ids: Vec<String>,
 }
 
 /// Picks the API key for one replicate - a pure function over the two
@@ -112,6 +124,7 @@ impl AchiralHttpSystem {
             base_url,
             api_key,
             settle_ms,
+            unconfirmed_business_event_ids: Vec::new(),
         })
     }
 }
@@ -255,6 +268,76 @@ pub fn parse_unresolved_gap_display_names(value: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// `POST /v1/memory/events/status`'s body (Plan 25/26 durable-write fix) -
+/// asks achiral.ai whether every `MemoryCandidate` derived from each
+/// `businessEventId` has reached Weaviate yet.
+pub fn event_status_payload(business_event_ids: &[String]) -> Value {
+    json!({ "businessEventIds": business_event_ids })
+}
+
+/// `{businessEventId -> status}` from `/v1/memory/events/status`'s
+/// response (`PublicMemoryService.eventStatus`, `status` one of
+/// `"written"`/`"pending"`/`"not_found"`).
+pub fn parse_event_statuses(value: &Value) -> std::collections::HashMap<String, String> {
+    value
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let id = item.get("businessEventId").and_then(Value::as_str)?;
+                    let status = item.get("status").and_then(Value::as_str)?;
+                    Some((id.to_string(), status.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `ingest_event_payload`'s response carries the staged `BusinessEvent`'s
+/// own id (`PublicMemoryService.ingestEvent`'s `businessEventId`) - the
+/// one thing `settle()` needs to later ask `/v1/memory/events/status`
+/// whether this specific event made it to Weaviate yet.
+fn parse_business_event_id(value: &Value) -> Option<String> {
+    value
+        .get("businessEventId")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// Pure polling loop (Plan 25/26 durable-write fix), no I/O of its own -
+/// `check` does the real work (an HTTP call in production, a fake in
+/// tests) and returns whichever of the ids it was given are still
+/// unconfirmed. Stops as soon as nothing is left, or once `max_wait_ms`
+/// has elapsed - replacing a blind sleep that raced achiral.ai's real,
+/// congestion-dependent write latency (confirmed live: 578ms-11,114ms
+/// for logically identical events) with an actual confirmation, bounded
+/// by the same wait budget the blind sleep used to spend unconditionally.
+fn poll_until_confirmed(
+    ids: Vec<String>,
+    max_wait_ms: u64,
+    poll_interval_ms: u64,
+    mut check: impl FnMut(&[String]) -> Vec<String>,
+) -> Vec<String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(max_wait_ms);
+    let mut remaining = ids;
+    loop {
+        if remaining.is_empty() {
+            return remaining;
+        }
+        remaining = check(&remaining);
+        if remaining.is_empty() || std::time::Instant::now() >= deadline {
+            return remaining;
+        }
+        let time_left = deadline.saturating_duration_since(std::time::Instant::now());
+        std::thread::sleep(std::cmp::min(
+            std::time::Duration::from_millis(poll_interval_ms),
+            time_left,
+        ));
+    }
+}
+
 /// Simulated time for achiral.ai's `recall`/`reinforce` eval-mode override
 /// (`X-Achiral-Eval-Now`, ISO 8601) - the public memory API takes it as a
 /// header, not a body field, confirmed 2026-11-08. Server-side, it's
@@ -316,8 +399,15 @@ impl MemorySystem for AchiralHttpSystem {
             ScopeKind::Agent => ingest_agent_payload(event),
             ScopeKind::Org | ScopeKind::User => ingest_event_payload(event),
         };
-        run_json_post(&url, self.api_key.as_deref(), &[], &payload)
+        let response = run_json_post(&url, self.api_key.as_deref(), &[], &payload)
             .unwrap_or_else(|err| panic!("achiral ingest failed: {err:#}"));
+        // Agent-scope `remember` is already synchronous (no triage lag) -
+        // only an org/user-scope event has a businessEventId to track.
+        if matches!(event.scope.kind, ScopeKind::Org | ScopeKind::User) {
+            if let Some(business_event_id) = parse_business_event_id(&response) {
+                self.unconfirmed_business_event_ids.push(business_event_id);
+            }
+        }
     }
 
     fn retrieve(
@@ -342,8 +432,41 @@ impl MemorySystem for AchiralHttpSystem {
     }
 
     fn settle(&mut self, _now: DateTime<Utc>) {
-        if self.settle_ms > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(self.settle_ms));
+        // Nothing org/user-scope was ingested since the last settle (or
+        // this system never tracked anything, e.g. agent-scope only) -
+        // nothing to poll for, so fall back to the old blind wait, if any.
+        if self.unconfirmed_business_event_ids.is_empty() {
+            if self.settle_ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(self.settle_ms));
+            }
+            return;
+        }
+        let ids = std::mem::take(&mut self.unconfirmed_business_event_ids);
+        let url = format!("{}/v1/memory/events/status", self.base_url);
+        let api_key = self.api_key.clone();
+        let still_unconfirmed = poll_until_confirmed(ids, self.settle_ms, 250, |remaining| {
+            let payload = event_status_payload(remaining);
+            let response = match run_json_post(&url, api_key.as_deref(), &[], &payload) {
+                Ok(response) => response,
+                // A transient status-check failure shouldn't panic the whole
+                // replay - treat it as "still unconfirmed" and let the
+                // overall wait budget decide when to give up.
+                Err(_) => return remaining.to_vec(),
+            };
+            let statuses = parse_event_statuses(&response);
+            remaining
+                .iter()
+                .filter(|id| statuses.get(id.as_str()).map(String::as_str) != Some("written"))
+                .cloned()
+                .collect()
+        });
+        if !still_unconfirmed.is_empty() {
+            eprintln!(
+                "[achiral] settle(): {} event(s) not confirmed written within {}ms: {:?}",
+                still_unconfirmed.len(),
+                self.settle_ms,
+                still_unconfirmed
+            );
         }
     }
 
@@ -568,6 +691,88 @@ mod tests {
     }
 
     #[test]
+    fn event_status_payload_carries_every_requested_business_event_id() {
+        let payload = event_status_payload(&["be-1".to_string(), "be-2".to_string()]);
+        assert_eq!(payload["businessEventIds"], json!(["be-1", "be-2"]));
+    }
+
+    #[test]
+    fn parse_event_statuses_maps_each_business_event_id_to_its_status() {
+        let response = json!({
+            "data": [
+                {"businessEventId": "be-1", "status": "written"},
+                {"businessEventId": "be-2", "status": "pending"}
+            ]
+        });
+        let statuses = parse_event_statuses(&response);
+        assert_eq!(statuses.get("be-1").map(String::as_str), Some("written"));
+        assert_eq!(statuses.get("be-2").map(String::as_str), Some("pending"));
+    }
+
+    #[test]
+    fn parse_event_statuses_is_empty_with_no_data_in_the_response() {
+        let response = json!({"error": {"message": "boom"}});
+        assert!(parse_event_statuses(&response).is_empty());
+    }
+
+    #[test]
+    fn parse_business_event_id_reads_it_from_the_ingest_response() {
+        let response = json!({"object": "memory.event", "businessEventId": "be-1"});
+        assert_eq!(parse_business_event_id(&response), Some("be-1".to_string()));
+    }
+
+    #[test]
+    fn parse_business_event_id_is_none_when_absent() {
+        let response = json!({"object": "memory.event"});
+        assert_eq!(parse_business_event_id(&response), None);
+    }
+
+    // Plan 25/26 durable-write fix: the pure loop logic, tested without
+    // any real HTTP call - `check` stands in for the real status request.
+    #[test]
+    fn poll_until_confirmed_returns_empty_immediately_with_no_ids() {
+        let remaining =
+            poll_until_confirmed(Vec::new(), 1000, 10, |_| panic!("must not call check"));
+        assert_eq!(remaining, Vec::<String>::new());
+    }
+
+    #[test]
+    fn poll_until_confirmed_stops_as_soon_as_check_reports_nothing_left() {
+        let started = std::time::Instant::now();
+        let remaining = poll_until_confirmed(vec!["be-1".to_string()], 5000, 10, |_| Vec::new());
+        assert_eq!(remaining, Vec::<String>::new());
+        // Confirmed on the very first check - must not wait anywhere near
+        // the 5-second budget.
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+    }
+
+    #[test]
+    fn poll_until_confirmed_retries_until_check_reports_nothing_left() {
+        let mut calls = 0;
+        let remaining = poll_until_confirmed(vec!["be-1".to_string()], 5000, 10, |remaining| {
+            calls += 1;
+            if calls < 3 {
+                remaining.to_vec()
+            } else {
+                Vec::new()
+            }
+        });
+        assert_eq!(remaining, Vec::<String>::new());
+        assert_eq!(calls, 3);
+    }
+
+    #[test]
+    fn poll_until_confirmed_gives_up_once_max_wait_elapses() {
+        let remaining = poll_until_confirmed(
+            vec!["be-1".to_string(), "be-2".to_string()],
+            50,
+            10,
+            |remaining| remaining.to_vec(), // never confirms
+        );
+        assert_eq!(remaining, vec!["be-1".to_string(), "be-2".to_string()]);
+    }
+
+    #[test]
     fn parse_recall_response_pairs_each_item_with_its_real_activation_score() {
         let response = json!({"data": [{"id": "m1", "score": 0.8}, {"id": "m2", "score": 0.3}]});
         assert_eq!(
@@ -680,6 +885,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 0,
+            unconfirmed_business_event_ids: Vec::new(),
         };
         let mut event = org_event();
         event.scope = Scope {
@@ -722,6 +928,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 30,
+            unconfirmed_business_event_ids: Vec::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
 
@@ -737,6 +944,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 0,
+            unconfirmed_business_event_ids: Vec::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
 
@@ -752,6 +960,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 0,
+            unconfirmed_business_event_ids: Vec::new(),
         };
         assert!(system.capabilities().settle);
     }
