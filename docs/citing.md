@@ -4,9 +4,11 @@ If you use Cognoscenti or the public benchmark artifacts, please cite the
 repository and the benchmark report. GitHub will surface citation metadata
 from [`CITATION.cff`](../CITATION.cff).
 
-Version DOI: [10.5281/zenodo.21995304](https://doi.org/10.5281/zenodo.21995304)
+Version DOI for v0.2.0: [10.5281/zenodo.21995304](https://doi.org/10.5281/zenodo.21995304)
+(v0.3.0 has not been deposited yet — cut a GitHub release to let Zenodo mint
+its version DOI, then replace this line.)
 
-Concept DOI: [10.5281/zenodo.21995303](https://doi.org/10.5281/zenodo.21995303)
+Concept DOI (always resolves to the latest version): [10.5281/zenodo.21995303](https://doi.org/10.5281/zenodo.21995303)
 
 Figshare preprint and reproducibility bundle DOI: [10.6084/m9.figshare.33288195](https://doi.org/10.6084/m9.figshare.33288195)
 
@@ -17,8 +19,8 @@ Software Heritage source archive: [`swh:1:snp:c49295731ebb8a76713e877cfd8dc6399c
   author = {{Achiral AI}},
   title = {Cognoscenti: A Benchmark for Trustworthy AI Memory},
   year = {2026},
-  version = {0.2.0},
-  doi = {10.5281/zenodo.21995304},
+  version = {0.3.0},
+  doi = {10.5281/zenodo.21995303},
   url = {https://github.com/Achiral-AI/cognoscenti}
 }
 
