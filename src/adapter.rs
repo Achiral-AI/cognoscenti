@@ -278,21 +278,48 @@ pub fn replay_stream(
 /// backed by live, stateful storage (achiral.ai) needs it to pick a
 /// separately-provisioned backing store per replicate; every baseline in
 /// this crate ignores it, since it carries no state between calls anyway.
+///
+/// `first_replicate_results`, when given, stands in for replicate 0's own
+/// run instead of this function building and ingesting into it again -
+/// `run_baseline_replay`'s own preliminary single pass (recall/leak/
+/// calibration reporting) already builds and ingests into the exact org
+/// `build_system(0)` would resolve to again here, via the same closure.
+/// Without this, replicate 0 alone got the whole stream ingested into it
+/// twice - confirmed live: 9 of 10 replicates agreed byte-for-byte, only
+/// replicate 0 differed, retrieving an event that could not exist yet at
+/// that point in the stream.
 pub fn replay_stream_replicated(
     stream: &Stream,
     mut build_system: impl FnMut(usize) -> Box<dyn MemorySystem>,
     top_k: usize,
     replicates: usize,
+    first_replicate_results: Option<&[QuestionResult]>,
 ) -> Vec<Vec<bool>> {
     assert!(replicates > 0, "need at least one replicate");
     let num_questions = stream.questions().count();
     let mut outcomes: Vec<Vec<bool>> = vec![Vec::with_capacity(replicates); num_questions];
 
-    for index in 0..replicates {
+    let debug = std::env::var("COGNOSCENTI_DEBUG_REPLICATES").is_ok();
+    let start_index = if let Some(results) = first_replicate_results {
+        for (i, result) in results.iter().enumerate() {
+            if debug {
+                eprintln!(
+                    "[replicate 0] {} recall@{top_k}={:.4} retrieved={:?}",
+                    result.question_id, result.recall_at_k, result.retrieved_ids
+                );
+            }
+            outcomes[i].push(result.recall_at_k >= 1.0);
+        }
+        1
+    } else {
+        0
+    };
+
+    for index in start_index..replicates {
         let mut system = build_system(index);
         let results = replay_stream(stream, system.as_mut(), top_k);
         for (i, result) in results.iter().enumerate() {
-            if std::env::var("COGNOSCENTI_DEBUG_REPLICATES").is_ok() {
+            if debug {
                 eprintln!(
                     "[replicate {index}] {} recall@{top_k}={:.4} retrieved={:?}",
                     result.question_id, result.recall_at_k, result.retrieved_ids
@@ -545,6 +572,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
                 },
                 config.top_k,
                 config.replicates,
+                Some(&results),
             );
             let flip_rate = crate::stability::flip_rate(&outcomes);
             println!(
@@ -742,10 +770,54 @@ mod tests {
             |_index| Box::new(SeenSoFar { seen: Vec::new() }),
             10,
             3,
+            None,
         );
 
         assert_eq!(outcomes, vec![vec![true, true, true]]);
         assert_eq!(crate::stability::flip_rate(&outcomes), 0.0);
+    }
+
+    // Root-cause fix (Plan 25 flip-rate investigation): run_baseline_replay's
+    // own preliminary single pass (before this function's loop even starts)
+    // already builds and ingests into replicate 0's own org - that org's
+    // index (0) is the same one this function's own loop would otherwise
+    // resolve to for its first iteration, via the exact same build_system
+    // closure. Without this, replicate 0 silently got the whole stream
+    // ingested into it twice (once by the preliminary pass, once again
+    // here), corrupting exactly one replicate's state and nothing else -
+    // confirmed live: 9 of 10 replicates agreed byte-for-byte, only
+    // replicate 0 differed, retrieving an event that could not have existed
+    // yet at that point in the stream. Passing the preliminary pass's own
+    // results back in lets this function reuse them for replicate 0
+    // instead of re-building and re-ingesting into the same org again.
+    #[test]
+    fn skips_building_a_system_for_replicate_zero_when_its_results_are_already_known() {
+        let stream = Stream {
+            items: vec![StreamItem::Question(question_asked_by("q1", "pm"))],
+        };
+        let mut seen_indices = Vec::new();
+        let first_replicate_results = vec![QuestionResult {
+            question_id: "q1".to_string(),
+            retrieved_ids: vec!["e1".to_string()],
+            recall_at_k: 1.0,
+            tokens_injected: 0,
+            scored_candidates: vec![],
+            gap_disclosure: None,
+        }];
+
+        let outcomes = replay_stream_replicated(
+            &stream,
+            |index| {
+                seen_indices.push(index);
+                Box::new(SeenSoFar { seen: Vec::new() })
+            },
+            10,
+            3,
+            Some(&first_replicate_results),
+        );
+
+        assert_eq!(seen_indices, vec![1, 2]);
+        assert_eq!(outcomes[0][0], true);
     }
 
     // A real adapter against a live, stateful deployment (achiral.ai) can
@@ -767,6 +839,7 @@ mod tests {
             },
             10,
             4,
+            None,
         );
 
         assert_eq!(seen_indices, vec![0, 1, 2, 3]);
