@@ -6,19 +6,24 @@
 //! sent as `Authorization: Bearer <api_key>` (matching
 //! `middleware/mcpTokenAuth.js`'s `acm_...` token convention).
 //!
-//! Scope support, updated 2026-11-09: `ScopeKind::Org` and `ScopeKind::Agent`
-//! are both wired (`ingest_url`/`retrieve_url` pick the route). Org goes to
-//! `POST {base}/v1/memory/events` (ingest) and `POST {base}/v1/memory/retrieve`
-//! (retrieve, async triage - a 5-minute cron actually writes to Weaviate, not
-//! the ingest call itself). Agent goes to `POST {base}/v1/memory/agents/{slug}`
-//! (`remember`, synchronous, no triage lag, but no `occurredAt` support) and
+//! Scope support, updated 2026-11-13: `ScopeKind::Org`, `ScopeKind::Agent`
+//! and `ScopeKind::User` are all wired on ingest (`ingest_url` picks the
+//! route). Org goes to `POST {base}/v1/memory/events` (ingest) and
+//! `POST {base}/v1/memory/retrieve` (retrieve, async triage - a 5-minute
+//! cron actually writes to Weaviate, not the ingest call itself). Agent goes
+//! to `POST {base}/v1/memory/agents/{slug}` (`remember`, synchronous, no
+//! triage lag, but no `occurredAt` support) and
 //! `POST {base}/v1/memory/agents/{slug}/retrieve` - both verified against achiral.ai's
 //! real route/service code, not guessed; the gap here was always this
-//! adapter never calling them, not achiral.ai missing them. `ScopeKind::User`
-//! still panics on ingest (`ingest_url` returns `None`) - achiral.ai's public
-//! memory router has no user-scoped route at all, confirmed by reading it;
-//! a user actor's retrieve still falls back to org-scope, same as before,
-//! since there is nowhere else to send it.
+//! adapter never calling them, not achiral.ai missing them. User goes to
+//! `POST {base}/v1/memory/users/{id}/events`, where `{id}` is resolved from
+//! the dataset's role label (`"platform-lead"`) through
+//! `COGNOSCENTI_ACHIRAL_USER_MAP_FILE` to a real org member id first
+//! (`resolve_user_scope_id`) - achiral.ai 404s on an unresolved label, and
+//! this adapter panics before even trying if the map has no entry for it.
+//! A user actor's retrieve still goes to the org-scope endpoint,
+//! deliberately - see `retrieve_url`'s doc comment for why that is
+//! correct, not a remaining gap.
 //!
 //! `actor` now decides the retrieve route (an agent actor retrieves from its
 //! own scope; a user actor from the org's) - `recall` has no separate actor
@@ -36,6 +41,7 @@ use crate::stream::{Actor, ActorKind, Scope, ScopeKind, StreamEvent};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 
 pub struct AchiralHttpSystem {
     base_url: String,
@@ -60,6 +66,11 @@ pub struct AchiralHttpSystem {
     /// Agent-scope `remember` writes are synchronous already (no triage
     /// lag), so `ingest()` never adds to this for an agent-scope event.
     unconfirmed_business_event_ids: Vec<String>,
+    /// This replicate's actor-name -> real org-member-id map (see
+    /// `resolve_user_map_for_replicate`'s doc comment) - empty when
+    /// `COGNOSCENTI_ACHIRAL_USER_MAP_FILE` isn't set, which is fine for any
+    /// dataset with no `ScopeKind::User` event.
+    user_member_ids: HashMap<String, String>,
 }
 
 /// Picks the API key for one replicate - a pure function over the two
@@ -99,6 +110,84 @@ fn resolve_api_key_for_replicate(
     }
 }
 
+/// This replicate's actor-name -> real org-member-id map, from the
+/// already-read contents of `COGNOSCENTI_ACHIRAL_USER_MAP_FILE` - a pure
+/// function over the file's text, mirroring `resolve_api_key_for_replicate`'s
+/// split between reading the env/file (impure, in `from_env_at`) and
+/// resolving one replicate's piece of it (pure, testable).
+///
+/// achiral.ai's `/v1/memory/users/:userId/events` requires `:userId` be a
+/// real member of the org the API key belongs to - a dataset's named
+/// user-scope actor (`"platform-lead"`) is just a role label, never a real
+/// member id, so this table is how a benchmark run bridges the two. The
+/// file is a JSON object (one map, shared by every replicate) or a JSON
+/// array of objects (one map per replicate, same indexing as
+/// `COGNOSCENTI_ACHIRAL_API_KEYS`) - an index past the end of an array is a
+/// setup error, matching `resolve_api_key_for_replicate`'s own rule. No
+/// file at all is not an error - most datasets have no user-scope actor to
+/// map.
+fn resolve_user_map_for_replicate(
+    file_contents: Option<&str>,
+    index: usize,
+) -> Result<HashMap<String, String>> {
+    let Some(contents) = file_contents else {
+        return Ok(HashMap::new());
+    };
+    let value: Value = serde_json::from_str(contents)
+        .with_context(|| "COGNOSCENTI_ACHIRAL_USER_MAP_FILE is not valid JSON")?;
+    match value {
+        Value::Array(maps) => {
+            let entry = maps.get(index).with_context(|| {
+                format!(
+                    "COGNOSCENTI_ACHIRAL_USER_MAP_FILE names {} map(s), but replicate index {index} needs one more",
+                    maps.len()
+                )
+            })?;
+            parse_user_map(entry)
+        }
+        other => parse_user_map(&other),
+    }
+}
+
+fn parse_user_map(value: &Value) -> Result<HashMap<String, String>> {
+    value
+        .as_object()
+        .with_context(|| "COGNOSCENTI_ACHIRAL_USER_MAP_FILE entry is not a JSON object")?
+        .iter()
+        .map(|(actor_id, member_id)| {
+            let member_id = member_id
+                .as_str()
+                .with_context(|| format!("user map entry {actor_id:?} is not a string"))?;
+            Ok((actor_id.clone(), member_id.to_string()))
+        })
+        .collect()
+}
+
+/// The real org-member id to put in a URL for this event's scope - `Org`
+/// and `Agent` scope ids are already the real thing (an org has one API
+/// key, an agent slug is itself the identifier); only `User` scope needs
+/// resolving, since its id is a dataset's role label, not a provisioned
+/// member. Errors rather than sending the unresolved label on, which would
+/// just 404 less clearly.
+fn resolve_user_scope_id<'a>(
+    scope: &'a Scope,
+    user_member_ids: &'a HashMap<String, String>,
+) -> Result<&'a str> {
+    match scope.kind {
+        ScopeKind::User => user_member_ids
+            .get(&scope.id)
+            .map(String::as_str)
+            .with_context(|| {
+                format!(
+                    "no provisioned org member for user-scope actor {:?} - add it to \
+                     COGNOSCENTI_ACHIRAL_USER_MAP_FILE",
+                    scope.id
+                )
+            }),
+        ScopeKind::Org | ScopeKind::Agent => Ok(&scope.id),
+    }
+}
+
 impl AchiralHttpSystem {
     pub fn from_env() -> Result<Self> {
         Self::from_env_at(0)
@@ -120,11 +209,20 @@ impl AchiralHttpSystem {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(0);
+        let user_map_contents = std::env::var("COGNOSCENTI_ACHIRAL_USER_MAP_FILE")
+            .ok()
+            .map(|path| {
+                std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading COGNOSCENTI_ACHIRAL_USER_MAP_FILE at {path}"))
+            })
+            .transpose()?;
+        let user_member_ids = resolve_user_map_for_replicate(user_map_contents.as_deref(), index)?;
         Ok(Self {
             base_url,
             api_key,
             settle_ms,
             unconfirmed_business_event_ids: Vec::new(),
+            user_member_ids,
         })
     }
 }
@@ -204,9 +302,7 @@ pub fn ingest_agent_payload(event: &StreamEvent) -> Value {
     })
 }
 
-/// Where to `POST` an ingest for this event's scope - `None` when no
-/// verified route exists (`ScopeKind::User`: achiral.ai's public memory
-/// API has no user-scoped path at all).
+/// Where to `POST` an ingest for this event's scope.
 pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
     match scope.kind {
         ScopeKind::Org => Some(format!("{base_url}/v1/memory/events")),
@@ -215,15 +311,31 @@ pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
         // confirmed this adapter is the only thing that was missing, not
         // achiral.ai.
         ScopeKind::Agent => Some(format!("{base_url}/v1/memory/agents/{}", scope.id)),
-        ScopeKind::User => None,
+        // `/v1/memory/users/:userId/events`, added 2026-11-13 to close the
+        // gap `beacon-01`'s `plat-e1` needs - `scope.id` is the owning
+        // member's id, carried through to `explicitOwnerUserId` so the
+        // candidate is written as that member's personal memory, not an
+        // org-wide one. achiral.ai requires `scope.id` be a real member of
+        // the org the API key belongs to (`resolveOrgMemberUserId`); the
+        // benchmark org provisioned for a dataset using this scope must
+        // register that member first, or ingest 404s.
+        ScopeKind::User => Some(format!("{base_url}/v1/memory/users/{}/events", scope.id)),
     }
 }
 
 /// Where to `POST` a retrieval for this actor - the actor asking is who
 /// the query is scoped to (an agent asks within its own memory; a user
-/// asks within the org's). achiral.ai has no verified user-scoped
-/// retrieve path either, so a user actor still goes to the org-scope
-/// endpoint, same as today.
+/// asks within the org's). A user actor stays on the org-scope endpoint
+/// deliberately, not because no user-scoped retrieve route exists
+/// (`/v1/memory/users/:userId/retrieve` does, as of 2026-11-13) - every
+/// dataset's `asked_by` actor is a role name (`"ops-lead"`, `"pm"`), not a
+/// provisioned org member, and `beacon-01`'s own leak-rate question
+/// (`beacon-q-leak`) depends on the asker NOT inheriting another member's
+/// personal audience: org-scope retrieve never does, by construction
+/// (`audienceFilter([])` never includes a personal audience). Routing
+/// every user actor through its own `/users/:id/retrieve` would need that
+/// id to be a real member too, and would only ever add visibility, never
+/// remove it - the wrong direction for a leak-rate trap.
 pub fn retrieve_url(base_url: &str, actor: &Actor) -> String {
     match actor.kind {
         ActorKind::Agent => format!("{base_url}/v1/memory/agents/{}/retrieve", actor.id),
@@ -389,7 +501,13 @@ impl MemorySystem for AchiralHttpSystem {
     }
 
     fn ingest(&mut self, event: &StreamEvent) {
-        let url = ingest_url(&self.base_url, &event.scope).unwrap_or_else(|| {
+        let resolved_id = resolve_user_scope_id(&event.scope, &self.user_member_ids)
+            .unwrap_or_else(|err| panic!("{err:#}"));
+        let resolved_scope = Scope {
+            kind: event.scope.kind,
+            id: resolved_id.to_string(),
+        };
+        let url = ingest_url(&self.base_url, &resolved_scope).unwrap_or_else(|| {
             panic!(
                 "AchiralHttpSystem has no verified user-scope ingest path - achiral.ai's \
                  public memory API has no user-scoped route at all"
@@ -537,6 +655,105 @@ mod tests {
     fn resolve_api_key_is_none_when_neither_env_value_is_set() {
         let key = resolve_api_key_for_replicate(None, None, 0).unwrap();
         assert_eq!(key, None);
+    }
+
+    #[test]
+    fn resolve_user_map_for_replicate_is_empty_with_no_file_given() {
+        let map = resolve_user_map_for_replicate(None, 0).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn resolve_user_map_for_replicate_reads_a_flat_object_for_any_replicate() {
+        let contents = r#"{"platform-lead": "507f1f77bcf86cd799439011"}"#;
+        for index in [0, 1, 7] {
+            let map = resolve_user_map_for_replicate(Some(contents), index).unwrap();
+            assert_eq!(
+                map.get("platform-lead").map(String::as_str),
+                Some("507f1f77bcf86cd799439011")
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_user_map_for_replicate_picks_the_nth_entry_of_an_array() {
+        let contents = r#"[{"platform-lead": "org0-id"}, {"platform-lead": "org1-id"}]"#;
+        let map = resolve_user_map_for_replicate(Some(contents), 1).unwrap();
+        assert_eq!(
+            map.get("platform-lead").map(String::as_str),
+            Some("org1-id")
+        );
+    }
+
+    #[test]
+    fn resolve_user_map_for_replicate_errors_when_the_index_has_no_matching_entry() {
+        let contents = r#"[{"platform-lead": "org0-id"}]"#;
+        let err = resolve_user_map_for_replicate(Some(contents), 1).unwrap_err();
+        assert!(err.to_string().contains("1 map(s)"));
+    }
+
+    #[test]
+    fn resolve_user_map_for_replicate_errors_on_invalid_json() {
+        let err = resolve_user_map_for_replicate(Some("not json"), 0).unwrap_err();
+        assert!(err.to_string().contains("not valid JSON"));
+    }
+
+    #[test]
+    fn resolve_user_scope_id_passes_through_org_and_agent_scope_unchanged() {
+        let map = HashMap::new();
+        assert_eq!(
+            resolve_user_scope_id(
+                &Scope {
+                    kind: ScopeKind::Org,
+                    id: "acme".to_string()
+                },
+                &map
+            )
+            .unwrap(),
+            "acme"
+        );
+        assert_eq!(
+            resolve_user_scope_id(
+                &Scope {
+                    kind: ScopeKind::Agent,
+                    id: "bot".to_string()
+                },
+                &map
+            )
+            .unwrap(),
+            "bot"
+        );
+    }
+
+    #[test]
+    fn resolve_user_scope_id_maps_a_user_scope_id_through_the_table() {
+        let mut map = HashMap::new();
+        map.insert("platform-lead".to_string(), "real-member-id".to_string());
+        assert_eq!(
+            resolve_user_scope_id(
+                &Scope {
+                    kind: ScopeKind::User,
+                    id: "platform-lead".to_string()
+                },
+                &map
+            )
+            .unwrap(),
+            "real-member-id"
+        );
+    }
+
+    #[test]
+    fn resolve_user_scope_id_errors_when_the_actor_has_no_provisioned_member() {
+        let map = HashMap::new();
+        let err = resolve_user_scope_id(
+            &Scope {
+                kind: ScopeKind::User,
+                id: "platform-lead".to_string(),
+            },
+            &map,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("platform-lead"));
     }
 
     fn org_event() -> StreamEvent {
@@ -865,7 +1082,7 @@ mod tests {
     }
 
     #[test]
-    fn ingest_url_is_none_for_user_scope_no_verified_route_exists() {
+    fn ingest_url_routes_user_scope_to_its_own_events_endpoint() {
         assert_eq!(
             ingest_url(
                 "http://unused",
@@ -874,25 +1091,8 @@ mod tests {
                     id: "sam".to_string(),
                 }
             ),
-            None
+            Some("http://unused/v1/memory/users/sam/events".to_string())
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "no verified user-scope ingest path")]
-    fn ingest_panics_for_a_user_scoped_event_rather_than_misrouting_it() {
-        let mut system = AchiralHttpSystem {
-            base_url: "http://unused".to_string(),
-            api_key: None,
-            settle_ms: 0,
-            unconfirmed_business_event_ids: Vec::new(),
-        };
-        let mut event = org_event();
-        event.scope = Scope {
-            kind: ScopeKind::User,
-            id: "sam".to_string(),
-        };
-        system.ingest(&event);
     }
 
     #[test]
@@ -929,6 +1129,7 @@ mod tests {
             api_key: None,
             settle_ms: 30,
             unconfirmed_business_event_ids: Vec::new(),
+            user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
 
@@ -945,6 +1146,7 @@ mod tests {
             api_key: None,
             settle_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
+            user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
 
@@ -961,6 +1163,7 @@ mod tests {
             api_key: None,
             settle_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
+            user_member_ids: HashMap::new(),
         };
         assert!(system.capabilities().settle);
     }
