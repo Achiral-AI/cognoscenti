@@ -6,7 +6,7 @@ authors:
   - name: "Achiral AI"
 version: "0.3.0"
 date-released: "2026-11-13"
-doi: "10.5281/zenodo.21995303"
+doi: "10.5281/zenodo.24203849"
 repository-code: "https://github.com/Achiral-AI/cognoscenti"
 url: "https://achiral.ai/benchmarks/ai-memory-benchmark"
 license: "Apache-2.0"
