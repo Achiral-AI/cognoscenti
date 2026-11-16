@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `src/stats.rs`: seeded 95% bootstrap CIs over questions, exact McNemar
+  test, and rule-of-three reporting for zero-event results. Replay output
+  now prints n and a CI on every rate; its leak and flip lines changed
+  wording (see `docs/usage.md`).
+- `src/generator.rs` and `--generate-stream`: seeded synthetic streams
+  (scope trials, owner-retrieval trials, individual, agent-handoff,
+  supersession and retrieval items, paired paraphrases and long-history
+  stable facts), sized for 95% CIs of about +/-11 points. Replay prints
+  paraphrase agreement and unchanged-fact accuracy by history length. `datasets/generated/trust-seed-0/`.
+
 ## [0.3.0] - 2026-11-13
 
 Replaces the single JSONL item eval's framing with the trust-axis

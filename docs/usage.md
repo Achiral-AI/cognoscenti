@@ -148,12 +148,19 @@ cargo run --release -- \
 ```
 
 Output is per-question recall@k and tokens injected (query plus retrieved
-content, word-count approximated), then the mean across questions:
+content, word-count approximated), then each mean with its n and 95%
+bootstrap CI over questions (seeded by `--seed`, so the same command prints the
+same interval). When every question gives the same value there is no variance
+to resample, so the line says so instead of printing a zero-width interval:
 
 ```
 === bm25 ===
   q1: recall@3 = 1.00, tokens injected = 18
-  mean recall@3 over 1 question(s): 1.0000; mean tokens injected: 18.0
+  mean recall@3: 1.0000 (n=1, no variance observed: CI undefined)
+  mean tokens injected: 18.0000 (n=1, no variance observed: CI undefined)
+  leaked returns per returned memory: 0.0000
+  trials with a leak: 0/1 events; 95% upper bound 1.0000 (3/n)
+  derived brier score = 0.0000; derived expected calibration error = 0.0000 (n=1, no variance observed: CI undefined)
 ```
 
 (Real output from the three-line stream above, not illustrative.)
@@ -165,7 +172,7 @@ same stream in one command.
 
 Each candidate a baseline returns is also scored for calibration
 (`MemorySystem::retrieve_scored`), and `--replicates N` reruns a fresh
-system `N` times to report run-to-run flip rate (`stability::flip_rate`):
+system `N` times to report which questions flip across runs (`stability::flipped_questions`):
 
 ```bash
 cargo run --release -- \
@@ -173,7 +180,8 @@ cargo run --release -- \
   --systems bm25 \
   --top-k 2 \
   --replicates 3 \
-  --calibration-bins 2
+  --calibration-bins 2 \
+  --seed 0
 ```
 
 ```
@@ -181,9 +189,12 @@ cargo run --release -- \
   atlas-q-15d: recall@2 = 1.00, tokens injected = 51
   auth-q-20d: recall@2 = 1.00, tokens injected = 59
   atlas-q-30d: recall@2 = 0.00, tokens injected = 51
-  mean recall@2 over 3 question(s): 0.6667; mean tokens injected: 53.7
-  derived brier score = 0.1111; derived expected calibration error = 0.0000
-  flip rate over 3 replicate(s): 0.0000
+  mean recall@2: 0.6667 (95% CI 0.0000-1.0000, n=3)
+  mean tokens injected: 53.6667 (95% CI 51.0000-59.0000, n=3)
+  leaked returns per returned memory: 0.0000
+  trials with a leak: 0/3 events; 95% upper bound 1.0000 (3/n)
+  derived brier score = 0.1111; derived expected calibration error = 0.0000 (n=3, no variance observed: CI undefined)
+  questions that flipped across 3 replicate(s): 0/3 events; 95% upper bound 1.0000 (3/n)
 ```
 
 (Real output from the shipped `atlas-01` dataset, not illustrative.) It's
@@ -191,10 +202,14 @@ cargo run --release -- \
 probability, so their raw score is converted first
 (`derive_probabilities_from_scores`) rather than treated as one directly
 — conflating the two would credit a baseline with a claim it never made.
-Flip rate is `0` here because every local baseline is deterministic; a
+Flips are counted per question and reported as events out of n questions; a
+zero-event result prints as the 3/n 95% upper bound (here 3/3, capped at 1,
+because three questions bound nothing), never as "0%". Zero flips here is
+because every local baseline is deterministic; a
 noisy system (ACT-R's retrieval noise, a real vendor or Achiral adapter)
 is the point of comparison this is built to measure. With only three
-questions, the ECE above is not a meaningful number yet — see
+questions, the CIs above span most of [0, 1] and the ECE is not a meaningful
+number yet — see
 [`docs/implementation.md`](implementation.md#whats-pending).
 
 ### Token accounting
@@ -237,3 +252,130 @@ designed; `bounded-window` and `bm25` stay flat. This is a three-line toy
 stream, not a measured claim about any real memory system — see
 [`docs/implementation.md`](implementation.md#whats-pending) for what
 hasn't been run yet.
+
+### Statistics
+
+Every rate in a replay report prints with its n. Means (recall@k, tokens
+injected, gap disclosure) and the ECE carry a 95% percentile-bootstrap CI over
+questions (`stats::bootstrap_ci_95`, 2000 resamples, seeded by `--seed`). ECE is
+resampled over questions, not candidate rows, because one question's candidates
+are not independent. Leaks and flips are per-trial events: a question counts
+as a leak if it returned any memory its asker was not authorized to see, and
+as a flip if its correctness differed across replicates. Their rate is the
+bootstrap over those questions, except a zero-event result, which prints as the
+rule-of-three 95% upper bound (`scoring::zero_leak_upper_bound_95`, capped at 1).
+"Leaked returns per returned memory" is the older per-memory ratio, kept
+alongside. On a generated stream there is one leak line each for the `scope` and `agent`
+categories, since the others hold no private memory to leak.
+
+For same-store, same-question comparisons of two systems, `stats::mcnemar_exact`
+takes their paired pass/fail vectors and returns the discordant counts and an
+exact two-sided p-value. It is a library function; no CLI flag calls it yet.
+A gap smaller than the CI width is not a claim.
+
+### Generated streams
+
+What it's for: enough questions for a CI that means something. The nine
+hand-made datasets hold 22 questions between them. `--generate-stream` writes a
+synthetic stream from fixed word lists and the `--seed`, with no model in the
+loop, and lints it before exiting:
+
+```bash
+cargo run --release -- --generate-stream datasets/generated/trust-seed-0/stream.jsonl --seed 0
+```
+
+```
+Generated datasets/generated/trust-seed-0/stream.jsonl: 3002 event(s), 860 question(s), seed 0
+sha256 2fc8d6c2ba4e9cff4979945653264ddcc79cec1e86e7038c8a0feccf7f5693e2
+Dataset lint: clean (datasets/generated/trust-seed-0/stream.jsonl)
+```
+
+The same seed gives the same bytes (and the same checksum). `--scope-trials`
+(default 300) sets the scope trials; `--items-per-category` (default 70) sets
+every other category. Question ids encode the category:
+
+- `scope-NNN-q`: a user's or agent's private note, then a different asker
+  (sometimes an agent) asks about it. Even trials have no org-visible answer, so
+  any returned memory is a leak. Odd trials also have an org-visible answer
+  that the private note competes with.
+- `owner-NNN-q`: the asker owns the private note (a user's or an agent's) and
+  asks for it back; gold is that note. This is the authorized counterpart of
+  `scope`: a system that refuses everything scores zero leaks and zero recall.
+- `individual-NNN-q`: one actor and their own scope, no second party. Half are
+  a person's notes, half an agent's task state (like `sam-01` and `scout-01`).
+  A fact is stated and possibly changed up to twice, with two filler facts
+  about the same subject; every second question rephrases the slot.
+- `agent-NNN-q`: agent A posts a fact to the org and revises it; A also keeps a
+  private scratchpad. Agent B asks. Gold is A's last post; the scratchpad is a
+  leak if it comes back.
+- `supersede-NNN-q`: a fact decided and changed two or three times; gold is the
+  last event. Every third chain also holds an informal aside that was never
+  adopted.
+- `retrieve-NNN-q`: one org-visible fact among five other facts about the same
+  project and one decoy for another project. Every second question rephrases the
+  slot, so only the project name is guaranteed to overlap.
+- `paraphrase-NNN-q` and `rephrase-NNN-q`: one fact and three same-project
+  distractors, asked twice by the same asker in different words. The second
+  wording shares only the project name with the event. Replay scores how much
+  of the returned evidence the two wordings share and how often only one found
+  the answer.
+- `stable-NNN-q`: a fact stated once and never changed, followed by 4 to 20
+  later updates to other facts about the same project. Replay reports accuracy
+  separately for up to 8 later updates and for 12 or more.
+
+Replaying it prints a line per category, each with its own n and CI:
+
+```bash
+cargo run --release -- --replay-stream datasets/generated/trust-seed-0/stream.jsonl \
+  --systems bm25,recency --top-k 3 --replicates 3 --seed 0
+```
+
+```
+=== bm25 ===
+  mean recall@3: 0.9093 (95% CI 0.8895-0.9279, n=860)
+  mean tokens injected: 37.1419 (95% CI 36.4616-37.8605, n=860)
+  category paraphrase: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  category rephrase: recall@3 0.9143 (95% CI 0.8429-0.9714, n=70)
+  category scope: recall@3 1.0000 (n=300, no variance observed: CI undefined)
+  category individual: recall@3 0.8286 (95% CI 0.7429-0.9143, n=70)
+  category retrieve: recall@3 0.7857 (95% CI 0.6857-0.8857, n=70)
+  category stable: recall@3 0.7714 (95% CI 0.6714-0.8714, n=70)
+  category agent: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  category owner: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  category supersede: recall@3 0.5857 (95% CI 0.4714-0.7000, n=70)
+  paraphrase pairs: evidence agreement (Jaccard of returned memories) 0.4129 (95% CI 0.3443-0.4829, n=70)
+  paraphrase pairs where only one wording found the answer: 6/70 events; 0.0857 (95% CI 0.0286-0.1571, n=70)
+  unchanged fact with up to 8 later updates: accuracy 0.9286 (95% CI 0.8214-1.0000, n=28)
+  unchanged fact with 12 or more later updates: accuracy 0.6667 (95% CI 0.5238-0.8095, n=42)
+  scope: trials with a leak: 297/300 events; 0.9900 (95% CI 0.9767-1.0000, n=300) (leaked returns per returned memory: 0.5189)
+  agent: trials with a leak: 66/70 events; 0.9429 (95% CI 0.8857-0.9857, n=70) (leaked returns per returned memory: 0.3143)
+  derived brier score = 0.1566; derived expected calibration error = 0.0000 (95% CI 0.0000-0.0000, n=860)
+  questions that flipped across 3 replicate(s): 0/860 events; 95% upper bound 0.0035 (3/n)
+=== recency ===
+  mean recall@3: 0.6744 (95% CI 0.6430-0.7047, n=860)
+  mean tokens injected: 34.9547 (95% CI 34.3988-35.5442, n=860)
+  category paraphrase: recall@3 0.0000 (n=70, no variance observed: CI undefined)
+  category rephrase: recall@3 0.0000 (n=70, no variance observed: CI undefined)
+  category scope: recall@3 1.0000 (n=300, no variance observed: CI undefined)
+  category individual: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  category retrieve: recall@3 0.0000 (n=70, no variance observed: CI undefined)
+  category stable: recall@3 0.0000 (n=70, no variance observed: CI undefined)
+  category agent: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  category owner: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  category supersede: recall@3 1.0000 (n=70, no variance observed: CI undefined)
+  paraphrase pairs: evidence agreement (Jaccard of returned memories) 1.0000 (n=70, no variance observed: CI undefined)
+  paraphrase pairs where only one wording found the answer: 0/70 events; 95% upper bound 0.0429 (3/n)
+  unchanged fact with up to 8 later updates: accuracy 0.0000 (n=28, no variance observed: CI undefined)
+  unchanged fact with 12 or more later updates: accuracy 0.0000 (n=42, no variance observed: CI undefined)
+  scope: trials with a leak: 300/300 events; 1.0000 (n=300, no variance observed: CI undefined) (leaked returns per returned memory: 0.4922)
+  agent: trials with a leak: 70/70 events; 1.0000 (n=70, no variance observed: CI undefined) (leaked returns per returned memory: 0.3333)
+  derived brier score = 0.1151; derived expected calibration error = 0.0000 (95% CI 0.0000-0.0000, n=860)
+  questions that flipped across 3 replicate(s): 0/860 events; 95% upper bound 0.0035 (3/n)
+```
+
+(Real output, per-question lines omitted. bm25 and recency ignore scope, so
+they leak on most `scope` and `agent` trials; that is the baseline a
+scope-aware system is compared against. `recency` scores 1.0 wherever the
+answer is the newest event, which is a ceiling, not skill.) The derived ECE is zero because derived probabilities are
+fitted to the same ranks they are scored on; calibration against a system's
+own probabilities is where ECE carries information.

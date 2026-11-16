@@ -28,6 +28,22 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub replay_stream: Option<String>,
 
+    /// Generate a synthetic stream (seeded by `--seed`, no model in the
+    /// loop), write it to this path, lint it and print its SHA-256, then
+    /// exit. Sized by `--scope-trials` and `--items-per-category`.
+    #[clap(long)]
+    pub generate_stream: Option<String>,
+
+    /// Scope/leak trials in a generated stream. ~300 are needed before a
+    /// "<1%" leak claim (3/n bound).
+    #[clap(long, default_value = "300")]
+    pub scope_trials: usize,
+
+    /// Items in each of the other generated categories (supersession,
+    /// retrieval, owner, individual, agent). ~70 gives a 95% CI of about +/-11 points.
+    #[clap(long, default_value = "70")]
+    pub items_per_category: usize,
+
     /// Half-life, in days, for the recency baseline's exponential decay.
     #[clap(long, default_value = "30")]
     pub recency_half_life_days: f64,
@@ -98,6 +114,13 @@ mod tests {
         // holding the config until `run()` is asked to do real work.
         let config = BenchmarkConfig::parse_from(["cognoscenti"]);
         assert!(BenchmarkRunner::new(config).is_ok());
+    }
+
+    #[test]
+    fn generator_flags_default_to_the_sizes_plan_40_calls_for() {
+        let config = BenchmarkConfig::parse_from(["cognoscenti", "--generate-stream", "out.jsonl"]);
+        assert_eq!(config.generate_stream.as_deref(), Some("out.jsonl"));
+        assert_eq!((config.scope_trials, config.items_per_category), (300, 70));
     }
 
     #[test]

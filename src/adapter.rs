@@ -13,6 +13,8 @@ use crate::eval::parse_systems;
 use crate::http_stream::HttpStreamSystem;
 use crate::runner::BenchmarkConfig;
 use crate::scoring::{leak_rate, recall_at_k, LeakTrial};
+use crate::stability::paraphrase_agreement;
+use crate::stats::{bootstrap_ci_95, bootstrap_statistic_ci_95, describe_event_rate};
 use crate::stream::{Actor, Stream, StreamEvent, StreamItem};
 use crate::tokens::{approx_token_count, geometric_checkpoints};
 use anyhow::Result;
@@ -182,6 +184,185 @@ pub fn leak_trials(stream: &Stream, results: &[QuestionResult]) -> Vec<LeakTrial
                 actor: (*actor).clone(),
                 returned_scopes,
             })
+        })
+        .collect()
+}
+
+/// One flag per trial: did it return any memory its asker was not
+/// authorized to see. The bootstrap unit for leaks is the trial (one
+/// question), not the returned memory, so the 3/n zero-leak bound and a
+/// CI both count independent trials.
+pub fn leak_trial_flags(trials: &[LeakTrial]) -> Vec<bool> {
+    trials
+        .iter()
+        .map(|trial| {
+            trial
+                .returned_scopes
+                .iter()
+                .any(|scope| !crate::scoring::is_authorized(&trial.actor, scope))
+        })
+        .collect()
+}
+
+/// The "mean recall@k" and "mean tokens injected" report lines, each with
+/// its n and 95% bootstrap CI over questions.
+pub fn recall_and_token_lines(results: &[QuestionResult], top_k: usize, seed: u64) -> Vec<String> {
+    let recalls: Vec<f64> = results.iter().map(|r| r.recall_at_k).collect();
+    let tokens: Vec<f64> = results.iter().map(|r| r.tokens_injected as f64).collect();
+    vec![
+        format!(
+            "  mean recall@{top_k}: {}",
+            bootstrap_ci_95(&recalls, seed).display()
+        ),
+        format!(
+            "  mean tokens injected: {}",
+            bootstrap_ci_95(&tokens, seed).display()
+        ),
+    ]
+}
+
+/// The category of a generated question id (`scope-017-q` -> `scope`), or
+/// `None` for any other id, so hand-made datasets are never regrouped.
+fn category_of(question_id: &str) -> Option<&str> {
+    split_question_id(question_id).map(|(category, _)| category)
+}
+
+/// `scope-017-q` -> `("scope", "017")`; `None` for any other id.
+fn split_question_id(question_id: &str) -> Option<(&str, &str)> {
+    let rest = question_id.strip_suffix("-q")?;
+    let (category, digits) = rest.rsplit_once('-')?;
+    (!category.is_empty() && !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then_some((category, digits))
+}
+
+/// Leak lines for a replay. A generated stream reports each category that
+/// holds a private memory (`scope`, `agent`) on its own, because pooling
+/// the categories that cannot leak would dilute the rate and inflate n.
+/// Any other stream reports one pooled line, as hand-made datasets always
+/// have.
+pub fn leak_lines(stream: &Stream, results: &[QuestionResult], seed: u64) -> Vec<String> {
+    let line = |label: &str, subset: &[QuestionResult]| -> Option<String> {
+        let trials = leak_trials(stream, subset);
+        (!trials.is_empty()).then(|| {
+            format!(
+                "  {label}: trials with a leak: {} (leaked returns per returned memory: {:.4})",
+                describe_event_rate(&leak_trial_flags(&trials), seed),
+                leak_rate(&trials)
+            )
+        })
+    };
+    let by_category: Vec<String> = ["scope", "agent"]
+        .iter()
+        .filter_map(|category| {
+            let subset: Vec<QuestionResult> = results
+                .iter()
+                .filter(|r| category_of(&r.question_id) == Some(*category))
+                .cloned()
+                .collect();
+            line(category, &subset)
+        })
+        .collect();
+    if by_category.is_empty() {
+        line("all questions", results).into_iter().collect()
+    } else {
+        by_category
+    }
+}
+
+/// Stability lines for a generated stream; empty for any other stream.
+/// Paraphrase pairs (`paraphrase-N-q` / `rephrase-N-q`) report how much of
+/// the returned evidence two wordings share and how often only one wording
+/// found the answer. Stable facts (`stable-N-q`) report accuracy for a short
+/// versus a long history of later updates to other facts.
+pub fn stability_lines(stream: &Stream, results: &[QuestionResult], seed: u64) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    let by_id: HashMap<&str, &QuestionResult> = results
+        .iter()
+        .map(|r| (r.question_id.as_str(), r))
+        .collect();
+    let pairs: Vec<(&QuestionResult, &QuestionResult)> = results
+        .iter()
+        .filter_map(|original| {
+            let (category, number) = split_question_id(&original.question_id)?;
+            (category == "paraphrase").then_some(())?;
+            let twin = by_id.get(format!("rephrase-{number}-q").as_str())?;
+            Some((original, *twin))
+        })
+        .collect();
+    if !pairs.is_empty() {
+        let agreement: Vec<f64> = pairs
+            .iter()
+            .map(|(a, b)| paraphrase_agreement(&a.retrieved_ids, &b.retrieved_ids))
+            .collect();
+        let split: Vec<bool> = pairs
+            .iter()
+            .map(|(a, b)| (a.recall_at_k > 0.0) != (b.recall_at_k > 0.0))
+            .collect();
+        lines.push(format!(
+            "  paraphrase pairs: evidence agreement (Jaccard of returned memories) {}",
+            bootstrap_ci_95(&agreement, seed).display()
+        ));
+        lines.push(format!(
+            "  paraphrase pairs where only one wording found the answer: {}",
+            describe_event_rate(&split, seed)
+        ));
+    }
+
+    let mut short = Vec::new();
+    let mut long = Vec::new();
+    for result in results {
+        let Some(("stable", number)) = split_question_id(&result.question_id) else {
+            continue;
+        };
+        let prefix = format!("stable-{number}-update-");
+        let updates = stream
+            .events()
+            .filter(|event| event.id.starts_with(&prefix))
+            .count();
+        let hit = result.recall_at_k > 0.0;
+        if updates <= 8 {
+            short.push(hit);
+        } else {
+            long.push(hit);
+        }
+    }
+    for (label, hits) in [("up to 8", &short), ("12 or more", &long)] {
+        if !hits.is_empty() {
+            let outcomes: Vec<f64> = hits.iter().map(|&hit| f64::from(u8::from(hit))).collect();
+            lines.push(format!(
+                "  unchanged fact with {label} later updates: accuracy {}",
+                bootstrap_ci_95(&outcomes, seed).display()
+            ));
+        }
+    }
+    lines
+}
+
+/// Recall@k with n and CI per generated category, in first-seen order. Each
+/// category is sized so its own CI is about +/-11 points; the pooled mean
+/// would hide a weak category behind a strong one.
+pub fn category_lines(results: &[QuestionResult], top_k: usize, seed: u64) -> Vec<String> {
+    let mut categories: Vec<&str> = Vec::new();
+    for result in results {
+        if let Some(category) = category_of(&result.question_id) {
+            if !categories.contains(&category) {
+                categories.push(category);
+            }
+        }
+    }
+    categories
+        .into_iter()
+        .map(|category| {
+            let recalls: Vec<f64> = results
+                .iter()
+                .filter(|r| category_of(&r.question_id) == Some(category))
+                .map(|r| r.recall_at_k)
+                .collect();
+            format!(
+                "  category {category}: recall@{top_k} {}",
+                bootstrap_ci_95(&recalls, seed).display()
+            )
         })
         .collect()
 }
@@ -472,17 +653,6 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         }
 
         let results = replay_stream(&stream, system.as_mut(), config.top_k);
-        let mean_recall = if results.is_empty() {
-            0.0
-        } else {
-            results.iter().map(|r| r.recall_at_k).sum::<f64>() / results.len() as f64
-        };
-        let mean_tokens = if results.is_empty() {
-            0.0
-        } else {
-            results.iter().map(|r| r.tokens_injected).sum::<usize>() as f64 / results.len() as f64
-        };
-
         println!("=== {name} ===");
         for result in &results {
             let gap_suffix = match result.gap_disclosure {
@@ -494,13 +664,16 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
                 result.question_id, config.top_k, result.recall_at_k, result.tokens_injected
             );
         }
-        println!(
-            "  mean recall@{} over {} question(s): {:.4}; mean tokens injected: {:.1}",
-            config.top_k,
-            results.len(),
-            mean_recall,
-            mean_tokens
-        );
+        for line in recall_and_token_lines(&results, config.top_k, config.seed) {
+            println!("{line}");
+        }
+
+        for line in category_lines(&results, config.top_k, config.seed) {
+            println!("{line}");
+        }
+        for line in stability_lines(&stream, &results, config.seed) {
+            println!("{line}");
+        }
 
         // Plan 26 Phase 5: only questions that declared an expected gap
         // and a system that declared evidence_graph support produce a
@@ -508,20 +681,14 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         // dataset with no gap questions prints nothing misleading.
         let gap_scores: Vec<f64> = results.iter().filter_map(|r| r.gap_disclosure).collect();
         if !gap_scores.is_empty() {
-            let mean_gap_disclosure = gap_scores.iter().sum::<f64>() / gap_scores.len() as f64;
             println!(
-                "  mean gap disclosure over {} question(s): {mean_gap_disclosure:.4}",
-                gap_scores.len()
+                "  mean gap disclosure: {}",
+                bootstrap_ci_95(&gap_scores, config.seed).display()
             );
         }
 
-        let trials = leak_trials(&stream, &results);
-        if !trials.is_empty() {
-            println!(
-                "  leak rate over {} trial(s): {:.4}",
-                trials.len(),
-                leak_rate(&trials)
-            );
+        for line in leak_lines(&stream, &results, config.seed) {
+            println!("{line}");
         }
 
         // None of these baselines claim a probability (baselines.rs: "the
@@ -531,27 +698,43 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         // were one. Derive a probability from the ranking first, same as
         // calibration.rs requires for any vendor that doesn't volunteer
         // one, and label it accordingly.
-        let raw_pairs: Vec<(f64, bool)> = results
+        let pairs_by_question: Vec<Vec<(f64, bool)>> = results
             .iter()
             .zip(stream.questions())
-            .flat_map(|(result, question)| calibration_pairs(result, &question.gold_event_ids))
+            .map(|(result, question)| calibration_pairs(result, &question.gold_event_ids))
             .collect();
-        if !raw_pairs.is_empty() {
-            let derived_probabilities = crate::calibration::derive_probabilities_from_scores(
-                &raw_pairs,
-                config.calibration_bins,
-            );
-            let derived_pairs: Vec<(f64, bool)> = derived_probabilities
-                .into_iter()
-                .zip(raw_pairs.iter().map(|&(_, observed)| observed))
+        let derived_pairs = |question_indices: &[usize]| -> Vec<(f64, bool)> {
+            let raw: Vec<(f64, bool)> = question_indices
+                .iter()
+                .flat_map(|&i| pairs_by_question[i].iter().copied())
                 .collect();
-            let brier = crate::calibration::brier_score(&derived_pairs);
-            let ece = crate::calibration::expected_calibration_error(
-                &derived_pairs,
-                config.calibration_bins,
-            );
+            if raw.is_empty() {
+                return raw;
+            }
+            let derived =
+                crate::calibration::derive_probabilities_from_scores(&raw, config.calibration_bins);
+            derived
+                .into_iter()
+                .zip(raw.iter().map(|&(_, observed)| observed))
+                .collect()
+        };
+        let all_questions: Vec<usize> = (0..pairs_by_question.len()).collect();
+        let all_pairs = derived_pairs(&all_questions);
+        if !all_pairs.is_empty() {
+            let brier = crate::calibration::brier_score(&all_pairs);
+            // ECE is resampled over questions, not over candidate rows: a
+            // question's candidates are not independent of each other.
+            let ece = bootstrap_statistic_ci_95(all_questions.len(), config.seed, |idx| {
+                let pairs = derived_pairs(idx);
+                if pairs.is_empty() {
+                    0.0
+                } else {
+                    crate::calibration::expected_calibration_error(&pairs, config.calibration_bins)
+                }
+            });
             println!(
-                "  derived brier score = {brier:.4}; derived expected calibration error = {ece:.4}"
+                "  derived brier score = {brier:.4}; derived expected calibration error = {}",
+                ece.display()
             );
         }
 
@@ -574,10 +757,10 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
                 config.replicates,
                 Some(&results),
             );
-            let flip_rate = crate::stability::flip_rate(&outcomes);
             println!(
-                "  flip rate over {} replicate(s): {flip_rate:.4}",
-                config.replicates
+                "  questions that flipped across {} replicate(s): {}",
+                config.replicates,
+                describe_event_rate(&crate::stability::flipped_questions(&outcomes), config.seed)
             );
         }
     }
@@ -663,6 +846,185 @@ mod tests {
         // appear in q1's retrieval, and q1's gold (e1) is already visible.
         assert_eq!(results[0].retrieved_ids, vec!["e1".to_string()]);
         assert_eq!(results[0].recall_at_k, 1.0);
+    }
+
+    #[test]
+    fn a_leak_trial_counts_once_however_many_unauthorized_memories_it_returns() {
+        let alice = Actor {
+            id: "alice".to_string(),
+            kind: ActorKind::User,
+        };
+        let private_of = |id: &str| Scope {
+            kind: ScopeKind::User,
+            id: id.to_string(),
+        };
+        let trials = [
+            LeakTrial {
+                actor: alice.clone(),
+                returned_scopes: vec![private_of("bob"), private_of("carol")],
+            },
+            LeakTrial {
+                actor: alice.clone(),
+                returned_scopes: vec![private_of("alice")],
+            },
+            LeakTrial {
+                actor: alice,
+                returned_scopes: vec![],
+            },
+        ];
+        assert_eq!(leak_trial_flags(&trials), vec![true, false, false]);
+    }
+
+    #[test]
+    fn the_replay_summary_prints_n_and_a_ci_for_every_rate() {
+        let results = vec![
+            QuestionResult {
+                question_id: "q1".into(),
+                retrieved_ids: vec![],
+                recall_at_k: 1.0,
+                tokens_injected: 10,
+                scored_candidates: vec![],
+                gap_disclosure: None,
+            },
+            QuestionResult {
+                question_id: "q2".into(),
+                retrieved_ids: vec![],
+                recall_at_k: 0.0,
+                tokens_injected: 30,
+                scored_candidates: vec![],
+                gap_disclosure: None,
+            },
+        ];
+        let lines = recall_and_token_lines(&results, 3, 0);
+        assert!(
+            lines[0].contains("recall@3") && lines[0].contains("0.5000"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[0].contains("95% CI") && lines[0].contains("n=2"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[1].contains("20.0000") && lines[1].contains("n=2"),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn leak_lines_cover_each_leak_bearing_category_with_its_own_n() {
+        let stream = Stream::from_jsonl(
+            r#"{"kind":"event","id":"scope-000-private","content":"x","timestamp":"2026-01-01T00:00:00Z","actor":{"id":"bob","kind":"user"},"scope":{"kind":"user","id":"bob"},"source":"s"}
+{"kind":"question","id":"scope-000-q","query":"x","asked_at":"2026-01-02T00:00:00Z","asked_by":{"id":"alice","kind":"user"},"gold_event_ids":[]}
+{"kind":"question","id":"agent-000-q","query":"x","asked_at":"2026-01-02T00:00:00Z","asked_by":{"id":"alice","kind":"user"},"gold_event_ids":[]}
+{"kind":"question","id":"retrieve-000-q","query":"x","asked_at":"2026-01-02T00:00:00Z","asked_by":{"id":"alice","kind":"user"},"gold_event_ids":[]}"#,
+        )
+        .unwrap();
+        let result = |id: &str, retrieved: &[&str]| QuestionResult {
+            question_id: id.to_string(),
+            retrieved_ids: retrieved.iter().map(|s| s.to_string()).collect(),
+            recall_at_k: 1.0,
+            tokens_injected: 1,
+            scored_candidates: vec![],
+            gap_disclosure: None,
+        };
+        let results = vec![
+            result("scope-000-q", &["scope-000-private"]),
+            result("agent-000-q", &[]),
+            result("retrieve-000-q", &[]),
+        ];
+        let lines = leak_lines(&stream, &results, 0);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].contains("scope") && lines[0].contains("1/1"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[1].contains("agent") && lines[1].contains("0/1"),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn stability_lines_score_paraphrase_pairs_and_stable_facts_by_history() {
+        let mut jsonl = String::new();
+        for n in 0..2 {
+            jsonl.push_str(&format!(
+                r#"{{"kind":"question","id":"paraphrase-00{n}-q","query":"a{n}","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"alice","kind":"user"}},"gold_event_ids":["g"]}}
+{{"kind":"question","id":"rephrase-00{n}-q","query":"b{n}","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"alice","kind":"user"}},"gold_event_ids":["g"]}}
+"#
+            ));
+        }
+        jsonl.push_str(
+            r#"{"kind":"event","id":"stable-000-update-1","content":"x","timestamp":"2026-01-01T00:00:00Z","actor":{"id":"alice","kind":"user"},"scope":{"kind":"org","id":"o"},"source":"s"}
+{"kind":"question","id":"stable-000-q","query":"c","asked_at":"2026-01-02T00:00:00Z","asked_by":{"id":"alice","kind":"user"},"gold_event_ids":["g"]}"#,
+        );
+        let stream = Stream::from_jsonl(&jsonl).unwrap();
+        let result = |id: &str, retrieved: &[&str], recall: f64| QuestionResult {
+            question_id: id.to_string(),
+            retrieved_ids: retrieved.iter().map(|s| s.to_string()).collect(),
+            recall_at_k: recall,
+            tokens_injected: 1,
+            scored_candidates: vec![],
+            gap_disclosure: None,
+        };
+        let results = vec![
+            result("paraphrase-000-q", &["g", "x"], 1.0),
+            result("rephrase-000-q", &["g", "x"], 1.0),
+            result("paraphrase-001-q", &["g"], 1.0),
+            result("rephrase-001-q", &["y"], 0.0),
+            result("stable-000-q", &["g"], 1.0),
+        ];
+        let lines = stability_lines(&stream, &results, 0).join("\n");
+        // Jaccard 1.0 and 0.0 -> mean 0.5 over two pairs.
+        assert!(
+            lines.contains("Jaccard of returned memories) 0.5000"),
+            "{lines}"
+        );
+        assert!(
+            lines.contains("only one wording found the answer: 1/2 events; 0.5000"),
+            "{lines}"
+        );
+        assert!(
+            lines.contains("up to 8 later updates: accuracy 1.0000 (n=1"),
+            "{lines}"
+        );
+        assert!(!lines.contains("12 or more"), "{lines}");
+    }
+
+    #[test]
+    fn category_of_reads_generated_question_ids_only() {
+        assert_eq!(category_of("scope-017-q"), Some("scope"));
+        assert_eq!(category_of("supersede-003-q"), Some("supersede"));
+        assert_eq!(category_of("atlas-q-15d"), None);
+        assert_eq!(category_of("beacon-q-leak"), None);
+    }
+
+    #[test]
+    fn category_lines_report_each_generated_category_with_its_own_n() {
+        let result = |id: &str, recall: f64| QuestionResult {
+            question_id: id.to_string(),
+            retrieved_ids: vec![],
+            recall_at_k: recall,
+            tokens_injected: 1,
+            scored_candidates: vec![],
+            gap_disclosure: None,
+        };
+        let results = vec![
+            result("scope-000-q", 1.0),
+            result("scope-001-q", 0.0),
+            result("retrieve-000-q", 1.0),
+            result("hand-made", 1.0),
+        ];
+        let lines = category_lines(&results, 3, 0);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].contains("scope") && lines[0].contains("n=2"),
+            "{lines:?}"
+        );
+        assert!(
+            lines[1].contains("retrieve") && lines[1].contains("n=1"),
+            "{lines:?}"
+        );
     }
 
     #[test]

@@ -37,6 +37,19 @@ pub fn flip_rate(per_question_outcomes: &[Vec<bool>]) -> f64 {
     flipped as f64 / per_question_outcomes.len() as f64
 }
 
+/// One flag per question: whether its correctness differed across
+/// replicates. `flip_rate` is the mean of these; the per-question form is
+/// what a bootstrap over questions resamples.
+pub fn flipped_questions(per_question_outcomes: &[Vec<bool>]) -> Vec<bool> {
+    per_question_outcomes
+        .iter()
+        .map(|outcomes| {
+            let first = outcomes.first().copied().unwrap_or(true);
+            outcomes.iter().any(|&outcome| outcome != first)
+        })
+        .collect()
+}
+
 /// Kendall's tau restricted to the items present in both rankings:
 /// `(concordant - discordant) / total_pairs` among the common items, in
 /// `[-1, 1]`. `1.0` is identical order, `-1.0` is fully reversed. Fewer

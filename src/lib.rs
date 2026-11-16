@@ -6,12 +6,14 @@ pub mod calibration;
 pub mod core;
 pub mod determinism;
 pub mod eval;
+pub mod generator;
 pub mod http_stream;
 pub mod lint;
 pub mod manifest;
 pub mod runner;
 pub mod scoring;
 pub mod stability;
+pub mod stats;
 pub mod stream;
 pub mod tokens;
 
@@ -42,6 +44,10 @@ pub use scoring::{is_authorized, leak_rate, recall_at_k, zero_leak_upper_bound_9
 pub use stability::{
     flip_rate, is_locked_in, longest_wrong_streak, paraphrase_agreement, rank_agreement,
     recovery_time_in_steps, unchanged_fact_accuracy,
+};
+pub use stats::{
+    bootstrap_ci_95, bootstrap_statistic_ci_95, describe_event_rate, mcnemar_exact, Interval,
+    McNemar,
 };
 pub use stream::{
     Actor, ActorKind, Scope, ScopeKind, Stream, StreamEvent, StreamItem, StreamQuestion,
