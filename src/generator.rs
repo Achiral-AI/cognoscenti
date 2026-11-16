@@ -920,6 +920,15 @@ mod tests {
         assert_eq!(to_jsonl(&generate(&a), &a), to_jsonl(&generate(&a), &a));
         let b = GeneratorConfig::new(2);
         assert_ne!(to_jsonl(&generate(&a), &a), to_jsonl(&generate(&b), &b));
+        // The header records the seed, so compare the items themselves.
+        let items = |c: &GeneratorConfig| {
+            let s = to_jsonl(&generate(c), c);
+            s.lines()
+                .filter(|l| !l.starts_with('#'))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_ne!(items(&a), items(&b));
     }
 
     #[test]
@@ -981,7 +990,7 @@ mod tests {
         let stream = generate(&GeneratorConfig::new(0));
         let kinds: Vec<ScopeKind> = stream
             .events()
-            .filter(|e| e.id.contains("-private"))
+            .filter(|e| e.id.starts_with("scope-") && e.id.ends_with("-private"))
             .map(|e| e.scope.kind)
             .collect();
         assert!(kinds.contains(&ScopeKind::User) && kinds.contains(&ScopeKind::Agent));
@@ -1115,6 +1124,7 @@ mod tests {
         for q in qs {
             assert_eq!(q.asked_by.kind, crate::stream::ActorKind::Agent);
             let gold = events[q.gold_event_ids[0].as_str()];
+            assert_eq!(gold.id, q.id.replace("-q", "-e2"), "gold is the last post");
             assert_eq!(gold.scope.kind, ScopeKind::Org);
             assert_eq!(gold.actor.kind, crate::stream::ActorKind::Agent);
             assert_ne!(

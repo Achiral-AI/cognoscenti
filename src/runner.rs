@@ -79,6 +79,12 @@ pub struct BenchmarkConfig {
     #[clap(long, default_value = "1")]
     pub replicates: usize,
 
+    /// Free-text label printed at the top of a replay, so output records
+    /// what a run was configured with outside this harness (for example
+    /// `activationNoiseScale=0.2`). Cognoscenti does not interpret it.
+    #[clap(long)]
+    pub label: Option<String>,
+
     /// Number of equal-width bins for calibration (reliability curve,
     /// expected calibration error). Only used with `--replay-stream`.
     #[clap(long, default_value = "10")]
@@ -121,6 +127,15 @@ mod tests {
         let config = BenchmarkConfig::parse_from(["cognoscenti", "--generate-stream", "out.jsonl"]);
         assert_eq!(config.generate_stream.as_deref(), Some("out.jsonl"));
         assert_eq!((config.scope_trials, config.items_per_category), (300, 70));
+    }
+
+    #[test]
+    fn label_is_optional_and_taken_verbatim() {
+        let none = BenchmarkConfig::parse_from(["cognoscenti"]);
+        assert_eq!(none.label, None);
+        let labelled =
+            BenchmarkConfig::parse_from(["cognoscenti", "--label", "activationNoiseScale=0.2"]);
+        assert_eq!(labelled.label.as_deref(), Some("activationNoiseScale=0.2"));
     }
 
     #[test]

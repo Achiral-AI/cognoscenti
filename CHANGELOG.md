@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `--label`: free-text run label printed at the top of a replay, for settings
+  outside the harness such as a noise scale.
 - `src/stats.rs`: seeded 95% bootstrap CIs over questions, exact McNemar
   test, and rule-of-three reporting for zero-event results. Replay output
   now prints n and a CI on every rate; its leak and flip lines changed

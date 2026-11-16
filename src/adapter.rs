@@ -204,6 +204,13 @@ pub fn leak_trial_flags(trials: &[LeakTrial]) -> Vec<bool> {
         .collect()
 }
 
+/// The replay's run label line, so output records settings the harness
+/// cannot see (a system's noise scale). Blank labels print nothing.
+pub fn label_line(label: Option<&str>) -> Option<String> {
+    let label = label?.trim();
+    (!label.is_empty()).then(|| format!("label: {label}"))
+}
+
 /// The "mean recall@k" and "mean tokens injected" report lines, each with
 /// its n and 95% bootstrap CI over questions.
 pub fn recall_and_token_lines(results: &[QuestionResult], top_k: usize, seed: u64) -> Vec<String> {
@@ -327,7 +334,7 @@ pub fn stability_lines(stream: &Stream, results: &[QuestionResult], seed: u64) -
             long.push(hit);
         }
     }
-    for (label, hits) in [("up to 8", &short), ("12 or more", &long)] {
+    for (label, hits) in [("up to 8", &short), ("more than 8", &long)] {
         if !hits.is_empty() {
             let outcomes: Vec<f64> = hits.iter().map(|&hit| f64::from(u8::from(hit))).collect();
             lines.push(format!(
@@ -634,6 +641,9 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         .as_ref()
         .expect("run_baseline_replay requires --replay-stream");
     let stream = Stream::load(path)?;
+    if let Some(line) = label_line(config.label.as_deref()) {
+        println!("{line}");
+    }
 
     for name in parse_systems(&config.systems) {
         let mut system = build_system(
@@ -946,19 +956,29 @@ mod tests {
 
     #[test]
     fn stability_lines_score_paraphrase_pairs_and_stable_facts_by_history() {
-        let mut jsonl = String::new();
-        for n in 0..2 {
-            jsonl.push_str(&format!(
-                r#"{{"kind":"question","id":"paraphrase-00{n}-q","query":"a{n}","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"alice","kind":"user"}},"gold_event_ids":["g"]}}
-{{"kind":"question","id":"rephrase-00{n}-q","query":"b{n}","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"alice","kind":"user"}},"gold_event_ids":["g"]}}
-"#
-            ));
+        let question = |id: &str| {
+            format!(
+                r#"{{"kind":"question","id":"{id}","query":"{id}","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"alice","kind":"user"}},"gold_event_ids":["g"]}}"#
+            )
+        };
+        let update = |id: &str| {
+            format!(
+                r#"{{"kind":"event","id":"{id}","content":"x","timestamp":"2026-01-01T00:00:00Z","actor":{{"id":"alice","kind":"user"}},"scope":{{"kind":"org","id":"o"}},"source":"s"}}"#
+            )
+        };
+        let mut lines_in = Vec::new();
+        for n in 0..3 {
+            lines_in.push(question(&format!("paraphrase-00{n}-q")));
+            lines_in.push(question(&format!("rephrase-00{n}-q")));
         }
-        jsonl.push_str(
-            r#"{"kind":"event","id":"stable-000-update-1","content":"x","timestamp":"2026-01-01T00:00:00Z","actor":{"id":"alice","kind":"user"},"scope":{"kind":"org","id":"o"},"source":"s"}
-{"kind":"question","id":"stable-000-q","query":"c","asked_at":"2026-01-02T00:00:00Z","asked_by":{"id":"alice","kind":"user"},"gold_event_ids":["g"]}"#,
-        );
-        let stream = Stream::from_jsonl(&jsonl).unwrap();
+        // Histories of 1, 8 and 9 updates: 8 is the last "short" one.
+        for (number, updates) in [(0, 1), (1, 8), (2, 9)] {
+            for u in 1..=updates {
+                lines_in.push(update(&format!("stable-00{number}-update-{u}")));
+            }
+            lines_in.push(question(&format!("stable-00{number}-q")));
+        }
+        let stream = Stream::from_jsonl(&lines_in.join("\n")).unwrap();
         let result = |id: &str, retrieved: &[&str], recall: f64| QuestionResult {
             question_id: id.to_string(),
             retrieved_ids: retrieved.iter().map(|s| s.to_string()).collect(),
@@ -971,24 +991,42 @@ mod tests {
             result("paraphrase-000-q", &["g", "x"], 1.0),
             result("rephrase-000-q", &["g", "x"], 1.0),
             result("paraphrase-001-q", &["g"], 1.0),
-            result("rephrase-001-q", &["y"], 0.0),
+            result("rephrase-001-q", &["g"], 1.0),
+            result("paraphrase-002-q", &["g"], 1.0),
+            result("rephrase-002-q", &["y"], 0.0),
             result("stable-000-q", &["g"], 1.0),
+            result("stable-001-q", &["y"], 0.0),
+            result("stable-002-q", &["g"], 1.0),
         ];
         let lines = stability_lines(&stream, &results, 0).join("\n");
-        // Jaccard 1.0 and 0.0 -> mean 0.5 over two pairs.
+        // Jaccard 1, 1 and 0 -> mean 2/3 over three pairs; one pair split.
         assert!(
-            lines.contains("Jaccard of returned memories) 0.5000"),
+            lines.contains("Jaccard of returned memories) 0.6667"),
             "{lines}"
         );
         assert!(
-            lines.contains("only one wording found the answer: 1/2 events; 0.5000"),
+            lines.contains("only one wording found the answer: 1/3 events; 0.3333"),
+            "{lines}"
+        );
+        // 1 and 8 updates are short (one hit of two); 9 is long (a hit).
+        assert!(
+            lines.contains("up to 8 later updates: accuracy 0.5000"),
             "{lines}"
         );
         assert!(
-            lines.contains("up to 8 later updates: accuracy 1.0000 (n=1"),
+            lines.contains("more than 8 later updates: accuracy 1.0000 (n=1"),
             "{lines}"
         );
-        assert!(!lines.contains("12 or more"), "{lines}");
+    }
+
+    #[test]
+    fn label_line_records_the_run_label_and_is_absent_without_one() {
+        assert_eq!(
+            label_line(Some("activationNoiseScale=0.2")),
+            Some("label: activationNoiseScale=0.2".to_string())
+        );
+        assert_eq!(label_line(None), None);
+        assert_eq!(label_line(Some("  ")), None);
     }
 
     #[test]
@@ -997,6 +1035,9 @@ mod tests {
         assert_eq!(category_of("supersede-003-q"), Some("supersede"));
         assert_eq!(category_of("atlas-q-15d"), None);
         assert_eq!(category_of("beacon-q-leak"), None);
+        // Ends in "-q" but the middle is not a number.
+        assert_eq!(category_of("hand-made-q"), None);
+        assert_eq!(category_of("-017-q"), None);
     }
 
     #[test]

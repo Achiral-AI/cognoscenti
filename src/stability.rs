@@ -149,6 +149,20 @@ mod tests {
     }
 
     #[test]
+    fn flipped_questions_flags_each_question_whose_outcome_changes() {
+        let outcomes = vec![
+            vec![true, true, true],
+            vec![true, false, true],
+            vec![false, false, false],
+            vec![false, true],
+        ];
+        assert_eq!(flipped_questions(&outcomes), vec![false, true, false, true]);
+        let flags = flipped_questions(&outcomes);
+        let share = flags.iter().filter(|&&f| f).count() as f64 / flags.len() as f64;
+        assert_eq!(share, flip_rate(&outcomes));
+    }
+
+    #[test]
     fn flip_rate_counts_questions_whose_outcome_changes_across_replicates() {
         let outcomes = vec![
             vec![true, true, true],

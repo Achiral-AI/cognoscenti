@@ -273,6 +273,22 @@ takes their paired pass/fail vectors and returns the discordant counts and an
 exact two-sided p-value. It is a library function; no CLI flag calls it yet.
 A gap smaller than the CI width is not a claim.
 
+### Labelling a run
+
+`--label <text>` prints `label: <text>` as the first line of a replay, so output
+records settings outside this harness, such as a system's noise scale. The text
+is not interpreted:
+
+```bash
+cargo run --release -- --replay-stream datasets/generated/trust-seed-0/stream.jsonl \
+  --systems bm25 --top-k 3 --label activationNoiseScale=0.2
+```
+
+```
+label: activationNoiseScale=0.2
+=== bm25 ===
+```
+
 ### Generated streams
 
 What it's for: enough questions for a CI that means something. The nine
@@ -321,7 +337,7 @@ every other category. Question ids encode the category:
   the answer.
 - `stable-NNN-q`: a fact stated once and never changed, followed by 4 to 20
   later updates to other facts about the same project. Replay reports accuracy
-  separately for up to 8 later updates and for 12 or more.
+  separately for up to 8 later updates and for more than 8.
 
 Replaying it prints a line per category, each with its own n and CI:
 
@@ -346,7 +362,7 @@ cargo run --release -- --replay-stream datasets/generated/trust-seed-0/stream.js
   paraphrase pairs: evidence agreement (Jaccard of returned memories) 0.4129 (95% CI 0.3443-0.4829, n=70)
   paraphrase pairs where only one wording found the answer: 6/70 events; 0.0857 (95% CI 0.0286-0.1571, n=70)
   unchanged fact with up to 8 later updates: accuracy 0.9286 (95% CI 0.8214-1.0000, n=28)
-  unchanged fact with 12 or more later updates: accuracy 0.6667 (95% CI 0.5238-0.8095, n=42)
+  unchanged fact with more than 8 later updates: accuracy 0.6667 (95% CI 0.5238-0.8095, n=42)
   scope: trials with a leak: 297/300 events; 0.9900 (95% CI 0.9767-1.0000, n=300) (leaked returns per returned memory: 0.5189)
   agent: trials with a leak: 66/70 events; 0.9429 (95% CI 0.8857-0.9857, n=70) (leaked returns per returned memory: 0.3143)
   derived brier score = 0.1566; derived expected calibration error = 0.0000 (95% CI 0.0000-0.0000, n=860)
@@ -366,7 +382,7 @@ cargo run --release -- --replay-stream datasets/generated/trust-seed-0/stream.js
   paraphrase pairs: evidence agreement (Jaccard of returned memories) 1.0000 (n=70, no variance observed: CI undefined)
   paraphrase pairs where only one wording found the answer: 0/70 events; 95% upper bound 0.0429 (3/n)
   unchanged fact with up to 8 later updates: accuracy 0.0000 (n=28, no variance observed: CI undefined)
-  unchanged fact with 12 or more later updates: accuracy 0.0000 (n=42, no variance observed: CI undefined)
+  unchanged fact with more than 8 later updates: accuracy 0.0000 (n=42, no variance observed: CI undefined)
   scope: trials with a leak: 300/300 events; 1.0000 (n=300, no variance observed: CI undefined) (leaked returns per returned memory: 0.4922)
   agent: trials with a leak: 70/70 events; 1.0000 (n=70, no variance observed: CI undefined) (leaked returns per returned memory: 0.3333)
   derived brier score = 0.1151; derived expected calibration error = 0.0000 (95% CI 0.0000-0.0000, n=860)

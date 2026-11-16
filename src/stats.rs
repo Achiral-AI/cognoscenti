@@ -166,7 +166,9 @@ mod tests {
 
     #[test]
     fn same_seed_gives_the_same_interval() {
-        let values = half_and_half(70);
+        // Continuous values: 0/1 data on a 1/70 grid can repeat by chance
+        // even with an unseeded rng.
+        let values: Vec<f64> = (0..25).map(|i| f64::from(i * i % 17) / 17.0).collect();
         assert_eq!(bootstrap_ci_95(&values, 7), bootstrap_ci_95(&values, 7));
     }
 
@@ -202,6 +204,17 @@ mod tests {
             idx.iter().map(|&i| values[i]).fold(0.0, f64::max)
         });
         assert_eq!(ci.estimate, 1.0);
+
+        // Distinct indices per resample: all n in the identity pass, about
+        // 63% in a with-replacement resample.
+        let distinct = bootstrap_statistic_ci_95(40, 3, |idx| {
+            let mut seen = idx.to_vec();
+            seen.sort_unstable();
+            seen.dedup();
+            seen.len() as f64 / 40.0
+        });
+        assert_eq!(distinct.estimate, 1.0);
+        assert!(distinct.lo > 0.45 && distinct.hi < 0.85, "{distinct:?}");
     }
 
     #[test]
