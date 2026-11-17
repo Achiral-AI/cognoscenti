@@ -203,3 +203,12 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    `COGNOSCENTI_ACHIRAL_SETTLE_MS=15000`. The five local baselines run once, separately, on
    the same 544 questions, because they are deterministic and do not depend on the cohort.
    Cognoscenti commit for the run: `8471f4e`.
+7. **First start aborted, orgs discarded.** About three minutes into the first start, both
+   cohorts logged `settle(): 4 event(s) not confirmed written within 15000ms` (the adapter
+   warned and went on, so those events were absent when the next question was scored). I
+   stopped both processes. Orgs `ct-run-s0-1` and `ct-run-s02-1` held partial data and are
+   discarded; their output is kept under `results/track-a-2026-11/aborted-1/` and none of
+   it is reported. The adapter now stops the run on an unconfirmed write instead of
+   warning (this commit), and the poll budget is set apart from the blind wait with
+   `COGNOSCENTI_ACHIRAL_CONFIRM_MS`. The restart uses a replacement org for each discarded
+   one. `COGNOSCENTI_ACHIRAL_SETTLE_MS` in item 6 applies to the blind wait only.

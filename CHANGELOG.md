@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `COGNOSCENTI_ACHIRAL_CONFIRM_MS`: poll budget for org-scope write confirmation,
+  separate from `COGNOSCENTI_ACHIRAL_SETTLE_MS`. An event still unconfirmed after it
+  now stops the run instead of printing a warning.
 - `--skip-user-scope`: drop generated trials that hold a user-scope event and
   report them as not run, for deployments with per-member routes disabled.
 - `--label`: free-text run label printed at the top of a replay, for settings

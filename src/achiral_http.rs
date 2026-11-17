@@ -60,6 +60,11 @@ pub struct AchiralHttpSystem {
     /// benchmark deployment tuned for a fast cycle, not a default
     /// behavior change.
     settle_ms: u64,
+    /// How long settle() polls for org-scope events to be confirmed
+    /// written before stopping the run. Set apart from `settle_ms` because
+    /// `settle_ms` is also a blind sleep before every question with nothing
+    /// to poll for. Defaults to `settle_ms`.
+    confirm_ms: u64,
     /// Org-scope events ingested since the last successful settle(),
     /// identified by the `businessEventId` achiral.ai's own ingest
     /// response returns - what settle() polls achiral.ai to confirm.
@@ -209,6 +214,12 @@ impl AchiralHttpSystem {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(0);
+        let confirm_ms = resolve_confirm_ms(
+            std::env::var("COGNOSCENTI_ACHIRAL_CONFIRM_MS")
+                .ok()
+                .as_deref(),
+            settle_ms,
+        );
         let user_map_contents = std::env::var("COGNOSCENTI_ACHIRAL_USER_MAP_FILE")
             .ok()
             .map(|path| {
@@ -221,6 +232,7 @@ impl AchiralHttpSystem {
             base_url,
             api_key,
             settle_ms,
+            confirm_ms,
             unconfirmed_business_event_ids: Vec::new(),
             user_member_ids,
         })
@@ -498,6 +510,24 @@ pub fn parse_recall_response(value: &Value) -> Vec<(String, f64)> {
 /// `curl -sS` exits 0 on a 404 or 403 and the body is valid JSON, so an
 /// `{"error": {...}}` response would otherwise pass as a stored write or an
 /// empty retrieval and be scored. Turn it into an error instead.
+fn resolve_confirm_ms(env: Option<&str>, settle_ms: u64) -> u64 {
+    env.and_then(|value| value.parse().ok())
+        .unwrap_or(settle_ms)
+}
+
+/// Errors when any org-scope event is still unconfirmed after the poll
+/// budget, naming how many and for how long.
+fn confirm_all_written(still_unconfirmed: &[String], waited_ms: u64) -> Result<()> {
+    if still_unconfirmed.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "settle(): {} event(s) not confirmed written within {waited_ms}ms: {:?}",
+        still_unconfirmed.len(),
+        still_unconfirmed
+    )
+}
+
 fn reject_api_error(response: Value) -> Result<Value> {
     if let Some(error) = response.get("error").filter(|e| e.is_object()) {
         let code = error["code"].as_str().unwrap_or("unknown");
@@ -583,7 +613,7 @@ impl MemorySystem for AchiralHttpSystem {
         let ids = std::mem::take(&mut self.unconfirmed_business_event_ids);
         let url = format!("{}/v1/memory/events/status", self.base_url);
         let api_key = self.api_key.clone();
-        let still_unconfirmed = poll_until_confirmed(ids, self.settle_ms, 250, |remaining| {
+        let still_unconfirmed = poll_until_confirmed(ids, self.confirm_ms, 250, |remaining| {
             let payload = event_status_payload(remaining);
             let response = match run_json_post(&url, api_key.as_deref(), &[], &payload) {
                 Ok(response) => response,
@@ -599,14 +629,10 @@ impl MemorySystem for AchiralHttpSystem {
                 .cloned()
                 .collect()
         });
-        if !still_unconfirmed.is_empty() {
-            eprintln!(
-                "[achiral] settle(): {} event(s) not confirmed written within {}ms: {:?}",
-                still_unconfirmed.len(),
-                self.settle_ms,
-                still_unconfirmed
-            );
-        }
+        // An unconfirmed event is absent from the store, so a question
+        // asked now would be scored as a miss the system did not earn.
+        confirm_all_written(&still_unconfirmed, self.confirm_ms)
+            .unwrap_or_else(|err| panic!("{err:#}"));
     }
 
     fn retrieve_scored(
@@ -647,6 +673,24 @@ impl MemorySystem for AchiralHttpSystem {
 mod tests {
     use super::*;
     use crate::stream::{ActorKind, Scope};
+
+    #[test]
+    fn an_unconfirmed_write_after_the_budget_is_an_error_never_a_scored_miss() {
+        assert!(confirm_all_written(&[], 15000).is_ok());
+        let ids = vec!["a".to_string(), "b".to_string()];
+        let err = confirm_all_written(&ids, 15000).unwrap_err().to_string();
+        assert!(
+            err.contains("2 event(s)") && err.contains("15000ms"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn the_confirm_budget_defaults_to_the_settle_wait_and_can_be_set_apart() {
+        assert_eq!(resolve_confirm_ms(None, 15000), 15000);
+        assert_eq!(resolve_confirm_ms(Some("90000"), 15000), 90000);
+        assert_eq!(resolve_confirm_ms(Some("not a number"), 15000), 15000);
+    }
 
     #[test]
     fn an_api_error_body_is_an_error_not_a_successful_response() {
@@ -1170,6 +1214,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 30,
+            confirm_ms: 30,
             unconfirmed_business_event_ids: Vec::new(),
             user_member_ids: HashMap::new(),
         };
@@ -1187,6 +1232,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 0,
+            confirm_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
             user_member_ids: HashMap::new(),
         };
@@ -1204,6 +1250,7 @@ mod tests {
             base_url: "http://unused".to_string(),
             api_key: None,
             settle_ms: 0,
+            confirm_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
             user_member_ids: HashMap::new(),
         };
