@@ -170,4 +170,36 @@ org ids and the settle time used. Keys and tokens are never written to the bundl
 
 ## Deviations
 
-None yet.
+Recorded 2026-11-17, before the first cohort run. Each is a change from the text above.
+
+1. **System under test.** `achiral.ai` commit `a2cd16a0` on `feat/benchmarks`, served by
+   `development-api-2` (`INFERENCE_EVAL_MODE=true`, `MEMORY_WRITE_INTERVAL=10 seconds`).
+   That commit carries a fix, made after this pre-registration was written, that keeps
+   agent-scoped memory out of organization-scope recall. A pre-run probe found the old
+   behaviour returning an agent's private note to an org-scope asker. The leak fix is part
+   of the system being measured. Results say nothing about earlier builds.
+2. **User-scope trials dropped (316 of 860 questions).** `scope` 229, `owner` 52,
+   `individual` 35. The per-member routes return 403 `user_scope_unavailable` (Plan 41).
+   Replay uses `--skip-user-scope`, which drops every generated trial holding a user-scope
+   event. It keeps 544 questions, the subset named in "The subset Achiral can run today". A
+   test pins the 544 / 316 split. The dropped trials are reported as not run.
+3. **The 70 `agent` questions are expected to score 0 by API design.** A smoke check on a
+   separate org showed `/v1/memory/agents/{slug}/retrieve` returns agent-scope memory only
+   and no org-scope memory, so agent B cannot see agent A's org post. This resolves the open
+   question in the subset section. The category is still run and reported, labelled "zero by
+   API design, not a retrieval result", and is excluded from any claim about retrieval
+   quality. The `agent` leak line still counts: it tests whether A's scratchpad reaches B.
+4. **Cycles not run.** The 10 and 100 checkpoints are deferred. Re-ingesting about 2,300 org
+   events per cycle through the real write path at about 7 seconds per settled question is
+   estimated at days for 100 cycles. A cycle-10 run may follow on a separate, later
+   approval and will be recorded here.
+5. **Adapter fix before the run.** The adapter previously treated an HTTP error body such as
+   `agent_not_found` as a successful write (commit `8471f4e`, `main`). It now stops on any
+   API error. Earlier smoke results on orgs `ct-a-s0-1` and `ct-run-smoke` came from a
+   seed-99 smoke stream that is not part of the registered dataset, and none of them is
+   reported.
+6. **Execution.** Each cohort is one process over five fresh orgs (`ct-run-s0-1..5` at
+   `activationNoiseScale` 0, `ct-run-s02-1..5` at 0.2, both `rerank`), run in parallel with
+   `COGNOSCENTI_ACHIRAL_SETTLE_MS=15000`. The five local baselines run once, separately, on
+   the same 544 questions, because they are deterministic and do not depend on the cohort.
+   Cognoscenti commit for the run: `8471f4e`.
