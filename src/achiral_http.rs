@@ -36,7 +36,7 @@
 //! retrieval is time-travel-safe so far.
 
 use crate::adapter::MemorySystem;
-use crate::http_stream::run_json_post;
+use crate::http_stream::run_json_post as post_json;
 use crate::stream::{Actor, ActorKind, Scope, ScopeKind, StreamEvent};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -495,6 +495,27 @@ pub fn parse_recall_response(value: &Value) -> Vec<(String, f64)> {
         .unwrap_or_default()
 }
 
+/// `curl -sS` exits 0 on a 404 or 403 and the body is valid JSON, so an
+/// `{"error": {...}}` response would otherwise pass as a stored write or an
+/// empty retrieval and be scored. Turn it into an error instead.
+fn reject_api_error(response: Value) -> Result<Value> {
+    if let Some(error) = response.get("error").filter(|e| e.is_object()) {
+        let code = error["code"].as_str().unwrap_or("unknown");
+        let message = error["message"].as_str().unwrap_or("");
+        anyhow::bail!("achiral API error {code}: {message}");
+    }
+    Ok(response)
+}
+
+fn run_json_post(
+    url: &str,
+    api_key: Option<&str>,
+    extra_headers: &[(&str, String)],
+    payload: &Value,
+) -> Result<Value> {
+    post_json(url, api_key, extra_headers, payload).and_then(reject_api_error)
+}
+
 impl MemorySystem for AchiralHttpSystem {
     fn name(&self) -> &str {
         "achiral"
@@ -626,6 +647,27 @@ impl MemorySystem for AchiralHttpSystem {
 mod tests {
     use super::*;
     use crate::stream::{ActorKind, Scope};
+
+    #[test]
+    fn an_api_error_body_is_an_error_not_a_successful_response() {
+        // curl exits 0 on a 404 and the body is valid JSON, so without this
+        // check a refused write (agent_not_found, user_scope_unavailable) is
+        // silently scored as if it had been stored.
+        let not_found = serde_json::json!({"error": {
+            "message": "Memory agent not found.",
+            "type": "invalid_request_error",
+            "code": "agent_not_found"
+        }});
+        let err = reject_api_error(not_found).unwrap_err().to_string();
+        assert!(err.contains("agent_not_found"), "{err}");
+        assert!(err.contains("Memory agent not found."), "{err}");
+
+        let forbidden = serde_json::json!({"error": {"code": "user_scope_unavailable"}});
+        assert!(reject_api_error(forbidden).is_err());
+
+        let ok = serde_json::json!({"object": "memory.search_result", "data": []});
+        assert_eq!(reject_api_error(ok.clone()).unwrap(), ok);
+    }
 
     #[test]
     fn resolve_api_key_picks_the_nth_key_when_a_keys_list_is_given() {
