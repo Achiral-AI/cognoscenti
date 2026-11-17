@@ -289,6 +289,20 @@ label: activationNoiseScale=0.2
 === bm25 ===
 ```
 
+### Generated stream profiles
+
+`--generate-profile codename` (the default) writes the registered dataset's wording. Its bytes
+are pinned by a test. `--generate-profile natural-names` writes a second dataset: two-word
+natural project names that recur across trials, several wordings per kind of note, and events
+that use a fact slot's name or its alias at random. Same categories and counts, same `--seed`.
+
+```bash
+cargo run --release -- --generate-stream datasets/generated/trust-seed-0-natural-names/stream.jsonl \
+  --seed 0 --generate-profile natural-names
+```
+
+The header line of a variant file records `profile=natural-names`.
+
 ### Skipping user-scope trials
 
 `--skip-user-scope` drops every generated trial that holds a user-scope event and

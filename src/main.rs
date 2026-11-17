@@ -44,6 +44,13 @@ fn generate_stream_file(config: &BenchmarkConfig, path: &str) -> Result<()> {
         agent_items: config.items_per_category,
         paraphrase_pairs: config.items_per_category,
         stable_items: config.items_per_category,
+        profile: match config.generate_profile.as_str() {
+            "codename" => Default::default(),
+            "natural-names" => cognoscenti::generator::Profile::NaturalNames,
+            other => {
+                anyhow::bail!("--generate-profile must be codename or natural-names, got {other}")
+            }
+        },
     };
     let stream = generate(&generator);
     std::fs::write(path, to_jsonl(&stream, &generator))?;

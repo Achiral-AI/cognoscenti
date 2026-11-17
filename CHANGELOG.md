@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `--generate-profile natural-names`: a second generated dataset with natural two-word
+  project names and varied wording, so a unique coined token is not a lexical giveaway. The
+  default profile is unchanged byte for byte.
 - `COGNOSCENTI_ACHIRAL_CONFIRM_MS`: poll budget for org-scope write confirmation,
   separate from `COGNOSCENTI_ACHIRAL_SETTLE_MS`. An event still unconfirmed after it
   now stops the run instead of printing a warning.

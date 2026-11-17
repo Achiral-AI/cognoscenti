@@ -39,6 +39,12 @@ pub struct BenchmarkConfig {
     #[clap(long, default_value = "300")]
     pub scope_trials: usize,
 
+    /// Wording of a generated stream: `codename` (the registered dataset's
+    /// unique coined project names, the default) or `natural-names` (two-word
+    /// natural project names and several wordings per kind of note).
+    #[clap(long, default_value = "codename")]
+    pub generate_profile: String,
+
     /// Items in each of the other generated categories (supersession,
     /// retrieval, owner, individual, agent). ~70 gives a 95% CI of about +/-11 points.
     #[clap(long, default_value = "70")]
@@ -134,6 +140,17 @@ mod tests {
         let config = BenchmarkConfig::parse_from(["cognoscenti", "--generate-stream", "out.jsonl"]);
         assert_eq!(config.generate_stream.as_deref(), Some("out.jsonl"));
         assert_eq!((config.scope_trials, config.items_per_category), (300, 70));
+    }
+
+    #[test]
+    fn generate_profile_defaults_to_the_registered_codename_profile() {
+        assert_eq!(
+            BenchmarkConfig::parse_from(["cognoscenti"]).generate_profile,
+            "codename"
+        );
+        let natural =
+            BenchmarkConfig::parse_from(["cognoscenti", "--generate-profile", "natural-names"]);
+        assert_eq!(natural.generate_profile, "natural-names");
     }
 
     #[test]

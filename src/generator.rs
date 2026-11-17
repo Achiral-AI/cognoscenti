@@ -17,6 +17,149 @@ pub const DEFAULT_SCOPE_TRIALS: usize = 300;
 /// ~70 items puts a 95% CI at about +/-11 points (Plan 40 Stage 1 item 3).
 pub const DEFAULT_ITEMS_PER_CATEGORY: usize = 70;
 
+/// How project names and note wording are produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Profile {
+    /// Unique coined project names and one template per kind of note. The
+    /// registered dataset: its bytes are pinned by a test.
+    #[default]
+    Codename,
+    /// Two-word natural project names that recur across trials and several
+    /// wordings per kind of note, so a unique rare token is not a giveaway.
+    NaturalNames,
+}
+
+/// Natural words only, so no project carries a coined token. Every word is
+/// shared by about 25 projects; only the pair is unique. None collides with a
+/// slot value (`monthly`, `quarterly`, `annual`) or a lint marker.
+const NATURAL_ADJECTIVES: &[&str] = &[
+    "Northern", "Southern", "Eastern", "Western", "Central", "Coastal", "Urban", "Rural", "Mobile",
+    "Digital", "Global", "Local", "Regional", "Public", "Private", "Shared", "Open", "Rapid",
+    "Smart", "Secure", "Unified", "Modern", "Classic", "Premium", "Basic", "Advanced", "Hybrid",
+    "Remote", "Internal", "External", "Bright", "Swift", "Prime", "Lean", "Priority", "Express",
+];
+const NATURAL_NOUNS: &[&str] = &[
+    "Portal",
+    "Dashboard",
+    "Gateway",
+    "Checkout",
+    "Subscriptions",
+    "Inventory",
+    "Catalog",
+    "Support",
+    "Onboarding",
+    "Analytics",
+    "Reporting",
+    "Payments",
+    "Search",
+    "Messaging",
+    "Scheduling",
+    "Fulfillment",
+    "Procurement",
+    "Payroll",
+    "Ledger",
+    "Registry",
+    "Directory",
+    "Archive",
+    "Console",
+    "Workflow",
+    "Pipeline",
+    "Marketplace",
+    "Loyalty",
+    "Shipping",
+    "Booking",
+    "Ticketing",
+    "Notifications",
+    "Identity",
+    "Compliance",
+    "Forecast",
+    "Storefront",
+    "Helpdesk",
+];
+
+// Wording per kind of note. Index 0 is the registered dataset's exact text;
+// the natural-names profile draws among all of them, the default never does.
+const T_PRIVATE_NOTE: &[&str] = &[
+    "Note to self: worried about {project} {concern}; raise it before the next planning round.",
+    "Reminder to myself: {project} {concern} is on my mind, bring it up at the next planning round.",
+    "Heads-up for me: I keep coming back to {concern} on {project}; flag it in planning.",
+    "Personal note: concerned about {concern} for {project}, want it discussed before planning.",
+];
+const T_CONCERN_Q: &[&str] = &[
+    "Has anyone raised a concern about {project} {concern}?",
+    "Did anyone flag {concern} on {project}?",
+    "Is anyone worried about {concern} for {project}?",
+];
+const T_REVIEW: &[&str] = &[
+    "The {project} {concern} review is set for {date}.",
+    "{project}'s {concern} review takes place on {date}.",
+    "We scheduled the {concern} review for {project} on {date}.",
+    "Review of {concern} for {project}: {date}.",
+];
+const T_REVIEW_Q: &[&str] = &[
+    "When is the {project} {concern} review?",
+    "When does the {concern} review for {project} happen?",
+    "What day is the {project} {concern} review?",
+];
+const T_OWNER_Q: &[&str] = &[
+    "What concern did I note about {project} {concern}?",
+    "What did I write down about {concern} on {project}?",
+    "Which worry did I record for {project} regarding {concern}?",
+];
+const T_DECIDED: &[&str] = &[
+    "{project} decided its {slot} is {value}.",
+    "For {project}, the {slot} is {value}.",
+    "We settled on {value} for the {project} {slot}.",
+    "{project}: {slot} is {value}, agreed in the planning sync.",
+];
+const T_CHANGED: &[&str] = &[
+    "{project} changed its {slot} to {value}.",
+    "The {project} {slot} moved to {value}.",
+    "{project} switched its {slot} to {value}.",
+    "Update: {project} {slot} is now {value}.",
+];
+const T_ASIDE: &[&str] = &[
+    "In passing, someone floated switching {project}'s {slot} to {value}.",
+    "Someone suggested moving {project}'s {slot} to {value}, nothing decided.",
+    "Informal idea: {project} {slot} might go to {value}.",
+];
+const T_SLOT_Q: &[&str] = &[
+    "What is {project}'s {slot}?",
+    "Tell me the {slot} for {project}.",
+    "{project}: what is the {slot}?",
+    "What did {project} say its {slot} is?",
+];
+const T_OWN_Q: &[&str] = &[
+    "What is {who} {project} {slot}?",
+    "Remind me what {who} {project} {slot} is.",
+    "{project}: what is {who} {slot}?",
+];
+const T_REPHRASE: &[&str] = &[
+    "Which {slot} did {project} settle on?",
+    "Remind me of {project}'s {slot}.",
+    "{project}: remind me which {slot} was chosen.",
+];
+const T_INDIVIDUAL: &[&str] = &["{lead}: {project} {slot} {verb} {value}."];
+const T_HANDOFF_FIRST: &[&str] = &[
+    "Handoff: {project} {slot} is {value}.",
+    "Passing along: {project}'s {slot} is {value}.",
+    "Handing over {project}: {slot} is {value}.",
+];
+const T_HANDOFF_CHANGE: &[&str] = &[
+    "Handoff: {project} {slot} changed to {value}.",
+    "Passing along: {project}'s {slot} is now {value}.",
+    "Handing over {project}: {slot} moved to {value}.",
+];
+const T_SCRATCH: &[&str] = &[
+    "Scratchpad: unsure whether {project} {slot} will hold; leaning to {value}.",
+    "Scratchpad: not sure the {project} {slot} will stick; leaning towards {value}.",
+    "Draft thinking: {project} {slot} might shift, probably {value}.",
+];
+const LEADS_USER: &[&str] = &["Note to self", "Reminder", "For my own tracking"];
+const LEADS_AGENT: &[&str] = &["Task state", "Working state", "Status for this task"];
+const VERBS_FIRST: &[&str] = &["is", "stands at", "has been set to"];
+const VERBS_CHANGE: &[&str] = &["moved to", "changed to", "was updated to"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GeneratorConfig {
     pub seed: u64,
@@ -37,6 +180,7 @@ pub struct GeneratorConfig {
     /// A fact that never changes, buried under 4-20 later updates to other
     /// facts about the same project: unchanged-fact accuracy as history grows.
     pub stable_items: usize,
+    pub profile: Profile,
 }
 
 impl GeneratorConfig {
@@ -51,6 +195,7 @@ impl GeneratorConfig {
             agent_items: DEFAULT_ITEMS_PER_CATEGORY,
             paraphrase_pairs: DEFAULT_ITEMS_PER_CATEGORY,
             stable_items: DEFAULT_ITEMS_PER_CATEGORY,
+            profile: Profile::Codename,
         }
     }
 }
@@ -170,7 +315,16 @@ const CONCERNS: &[&str] = &[
     "roadmap scope",
 ];
 
+fn fill(template: &str, fields: &[(&str, &str)]) -> String {
+    let mut out = template.to_string();
+    for (key, value) in fields {
+        out = out.replace(&format!("{{{key}}}"), value);
+    }
+    out
+}
+
 struct Builder {
+    profile: Profile,
     rng: StdRng,
     names: Vec<String>,
     day: i64,
@@ -178,6 +332,81 @@ struct Builder {
 }
 
 impl Builder {
+    fn natural(&self) -> bool {
+        self.profile == Profile::NaturalNames
+    }
+
+    /// Fills `{key}` placeholders. The default profile always takes variant
+    /// 0 and draws nothing from the rng, so its bytes cannot move.
+    fn text(&mut self, variants: &[&str], fields: &[(&str, &str)]) -> String {
+        let pick = if self.natural() {
+            self.rng.gen_range(0..variants.len())
+        } else {
+            0
+        };
+        self.finish(fill(variants[pick], fields))
+    }
+
+    /// The natural profile reads "Payments' launch date", not "Payments's".
+    fn finish(&self, text: String) -> String {
+        if self.natural() {
+            text.replace("s's", "s'")
+        } else {
+            text
+        }
+    }
+
+    /// Like `text`, but the default profile picks variant 0 or 1 by the
+    /// item index, as the registered dataset always did.
+    fn text_by_parity(
+        &mut self,
+        variants: &[&str],
+        index: usize,
+        fields: &[(&str, &str)],
+    ) -> String {
+        let pick = if self.natural() {
+            self.rng.gen_range(0..variants.len())
+        } else if index.is_multiple_of(2) {
+            0
+        } else {
+            1
+        };
+        self.finish(fill(variants[pick], fields))
+    }
+
+    /// The word an event uses for a fact slot. The natural profile mixes the
+    /// name with its alias, so a query's wording does not always match.
+    fn event_slot(&mut self, attribute: &Attribute) -> &'static str {
+        if self.natural() && self.rng.gen_range(0..2) == 1 {
+            attribute.alias
+        } else {
+            attribute.name
+        }
+    }
+
+    /// The word a question uses for a slot. The default profile uses the
+    /// alias when `alias_in_default` and the name otherwise.
+    fn question_slot(&mut self, attribute: &Attribute, alias_in_default: bool) -> &'static str {
+        let alias = if self.natural() {
+            self.rng.gen_range(0..2) == 1
+        } else {
+            alias_in_default
+        };
+        if alias {
+            attribute.alias
+        } else {
+            attribute.name
+        }
+    }
+
+    fn pick_word(&mut self, words: &'static [&'static str]) -> &'static str {
+        if self.natural() {
+            words[self.rng.gen_range(0..words.len())]
+        } else {
+            words[0]
+        }
+    }
+
     fn codename(&mut self) -> String {
         self.names
             .pop()
@@ -241,7 +470,7 @@ impl Builder {
             source,
             supersedes,
             entities: vec![EntityReference {
-                external_id: project.to_lowercase(),
+                external_id: project.to_lowercase().replace(' ', "-"),
                 display_name: project.to_string(),
                 entity_type: "project".to_string(),
             }],
@@ -303,9 +532,13 @@ impl Builder {
             id: owner.id.clone(),
         };
         let id = format!("scope-{index:03}");
+        let note = self.text(
+            T_PRIVATE_NOTE,
+            &[("project", &project), ("concern", concern)],
+        );
         self.event(
             format!("{id}-private"),
-            format!("Note to self: worried about {project} {concern}; raise it before the next planning round."),
+            note,
             0,
             owner,
             private_scope,
@@ -313,9 +546,10 @@ impl Builder {
             None,
         );
         if index.is_multiple_of(2) {
+            let query = self.text(T_CONCERN_Q, &[("project", &project), ("concern", concern)]);
             self.question(
                 format!("{id}-q"),
-                format!("Has anyone raised a concern about {project} {concern}?"),
+                query,
                 240,
                 asker,
                 Vec::new(),
@@ -324,18 +558,23 @@ impl Builder {
         } else {
             let date = format!("Apr {}", self.rng.gen_range(1..29));
             let author = self.user();
+            let review = self.text(
+                T_REVIEW,
+                &[("project", &project), ("concern", concern), ("date", &date)],
+            );
             self.event(
                 format!("{id}-org"),
-                format!("The {project} {concern} review is set for {date}."),
+                review,
                 60,
                 author,
                 Self::org_scope(),
                 &project,
                 None,
             );
+            let query = self.text(T_REVIEW_Q, &[("project", &project), ("concern", concern)]);
             self.question(
                 format!("{id}-q"),
-                format!("When is the {project} {concern} review?"),
+                query,
                 240,
                 asker,
                 vec![format!("{id}-org")],
@@ -360,9 +599,13 @@ impl Builder {
             kind: scope_kind,
             id: owner.id.clone(),
         };
+        let note = self.text(
+            T_PRIVATE_NOTE,
+            &[("project", &project), ("concern", concern)],
+        );
         self.event(
             format!("{id}-private"),
-            format!("Note to self: worried about {project} {concern}; raise it before the next planning round."),
+            note,
             0,
             owner.clone(),
             scope,
@@ -371,18 +614,23 @@ impl Builder {
         );
         let date = format!("Apr {}", self.rng.gen_range(1..29));
         let author = self.user();
+        let review = self.text(
+            T_REVIEW,
+            &[("project", &project), ("concern", concern), ("date", &date)],
+        );
         self.event(
             format!("{id}-org"),
-            format!("The {project} {concern} review is set for {date}."),
+            review,
             60,
             author,
             Self::org_scope(),
             &project,
             None,
         );
+        let query = self.text(T_OWNER_Q, &[("project", &project), ("concern", concern)]);
         self.question(
             format!("{id}-q"),
-            format!("What concern did I note about {project} {concern}?"),
+            query,
             240,
             owner,
             vec![format!("{id}-private")],
@@ -397,10 +645,10 @@ impl Builder {
         let project = self.codename();
         let is_agent = self.rng.gen_range(0..2) == 0;
         let actor = if is_agent { self.agent() } else { self.user() };
-        let (scope_kind, lead) = if is_agent {
-            (ScopeKind::Agent, "Task state")
+        let (scope_kind, leads) = if is_agent {
+            (ScopeKind::Agent, LEADS_AGENT)
         } else {
-            (ScopeKind::User, "Note to self")
+            (ScopeKind::User, LEADS_USER)
         };
         let scope = Scope {
             kind: scope_kind,
@@ -418,8 +666,19 @@ impl Builder {
         let mut minutes = 0;
         for (step, value) in values.iter().take(length).enumerate() {
             let event_id = format!("{id}-e{}", step + 1);
-            let verb = if step == 0 { "is" } else { "moved to" };
-            let content = format!("{lead}: {project} {} {verb} {value}.", target.name);
+            let verb = self.pick_word(if step == 0 { VERBS_FIRST } else { VERBS_CHANGE });
+            let lead = self.pick_word(leads);
+            let slot = self.event_slot(target);
+            let content = self.text(
+                T_INDIVIDUAL,
+                &[
+                    ("lead", lead),
+                    ("project", &project),
+                    ("slot", slot),
+                    ("verb", verb),
+                    ("value", value),
+                ],
+            );
             self.event(
                 event_id.clone(),
                 content,
@@ -434,9 +693,22 @@ impl Builder {
         }
         for (n, other) in slots[1..3].iter().enumerate() {
             let value = other.values[self.rng.gen_range(0..other.values.len())];
+            let verb = self.pick_word(VERBS_FIRST);
+            let lead = self.pick_word(leads);
+            let slot = self.event_slot(other);
+            let content = self.text(
+                T_INDIVIDUAL,
+                &[
+                    ("lead", lead),
+                    ("project", &project),
+                    ("slot", slot),
+                    ("verb", verb),
+                    ("value", value),
+                ],
+            );
             self.event(
                 format!("{id}-filler-{}", n + 1),
-                format!("{lead}: {project} {} is {value}.", other.name),
+                content,
                 minutes,
                 actor.clone(),
                 scope.clone(),
@@ -445,15 +717,19 @@ impl Builder {
             );
             minutes += 30;
         }
-        let slot_words = if index.is_multiple_of(2) {
-            target.name
-        } else {
-            target.alias
-        };
+        let slot_words = self.question_slot(target, !index.is_multiple_of(2));
         let pronoun = if is_agent { "the" } else { "my" };
+        let query = self.text(
+            T_OWN_Q,
+            &[
+                ("who", pronoun),
+                ("project", &project),
+                ("slot", slot_words),
+            ],
+        );
         self.question(
             format!("{id}-q"),
-            format!("What is {pronoun} {project} {slot_words}?"),
+            query,
             minutes + 120,
             actor,
             vec![previous.expect("a chain has at least one event")],
@@ -478,21 +754,28 @@ impl Builder {
         values.shuffle(&mut self.rng);
         let id = format!("agent-{index:03}");
 
+        let slot = self.event_slot(attribute);
+        let first = self.text(
+            T_HANDOFF_FIRST,
+            &[("project", &project), ("slot", slot), ("value", values[0])],
+        );
         self.event(
             format!("{id}-e1"),
-            format!("Handoff: {project} {} is {}.", attribute.name, values[0]),
+            first,
             0,
             writer.clone(),
             Self::org_scope(),
             &project,
             None,
         );
+        let slot = self.event_slot(attribute);
+        let scratch = self.text(
+            T_SCRATCH,
+            &[("project", &project), ("slot", slot), ("value", values[2])],
+        );
         self.event(
             format!("{id}-scratch"),
-            format!(
-                "Scratchpad: unsure whether {project} {} will hold; leaning to {}.",
-                attribute.name, values[2]
-            ),
+            scratch,
             30,
             writer.clone(),
             Scope {
@@ -502,26 +785,25 @@ impl Builder {
             &project,
             None,
         );
+        let slot = self.event_slot(attribute);
+        let change = self.text(
+            T_HANDOFF_CHANGE,
+            &[("project", &project), ("slot", slot), ("value", values[1])],
+        );
         self.event(
             format!("{id}-e2"),
-            format!(
-                "Handoff: {project} {} changed to {}.",
-                attribute.name, values[1]
-            ),
+            change,
             60,
             writer,
             Self::org_scope(),
             &project,
             Some(format!("{id}-e1")),
         );
-        let slot_words = if index.is_multiple_of(2) {
-            attribute.name
-        } else {
-            attribute.alias
-        };
+        let slot_words = self.question_slot(attribute, !index.is_multiple_of(2));
+        let query = self.text(T_SLOT_Q, &[("project", &project), ("slot", slot_words)]);
         self.question(
             format!("{id}-q"),
-            format!("What is {project}'s {slot_words}?"),
+            query,
             240,
             reader,
             vec![format!("{id}-e2")],
@@ -544,17 +826,13 @@ impl Builder {
         let mut minutes = 0;
         for step in 0..length {
             let event_id = format!("{id}-e{}", step + 1);
-            let content = if step == 0 {
-                format!(
-                    "{project} decided its {} is {}.",
-                    attribute.name, values[step]
-                )
-            } else {
-                format!(
-                    "{project} changed its {} to {}.",
-                    attribute.name, values[step]
-                )
-            };
+            let slot = self.event_slot(attribute);
+            let fields = [
+                ("project", project.as_str()),
+                ("slot", slot),
+                ("value", values[step]),
+            ];
+            let content = self.text(if step == 0 { T_DECIDED } else { T_CHANGED }, &fields);
             let author = self.user();
             self.event(
                 event_id.clone(),
@@ -569,12 +847,18 @@ impl Builder {
             minutes += 30;
             if index.is_multiple_of(3) && step == length - 2 {
                 let floater = self.user();
+                let slot = self.event_slot(attribute);
+                let aside = self.text(
+                    T_ASIDE,
+                    &[
+                        ("project", &project),
+                        ("slot", slot),
+                        ("value", values[length]),
+                    ],
+                );
                 self.event(
                     format!("{id}-aside"),
-                    format!(
-                        "In passing, someone floated switching {project}'s {} to {}.",
-                        attribute.name, values[length]
-                    ),
+                    aside,
                     minutes,
                     floater,
                     Self::org_scope(),
@@ -585,9 +869,11 @@ impl Builder {
             }
         }
         let asker = self.user();
+        let slot = self.question_slot(attribute, false);
+        let query = self.text(T_SLOT_Q, &[("project", &project), ("slot", slot)]);
         self.question(
             format!("{id}-q"),
-            format!("What is {project}'s {}?", attribute.name),
+            query,
             minutes + 120,
             asker,
             vec![previous.expect("a chain has at least two events")],
@@ -611,9 +897,14 @@ impl Builder {
 
         let mut minutes = 0;
         let author = self.user();
+        let slot = self.event_slot(target);
+        let gold = self.text(
+            T_DECIDED,
+            &[("project", &project), ("slot", slot), ("value", value)],
+        );
         self.event(
             format!("{id}-gold"),
-            format!("{project} decided its {} is {value}.", target.name),
+            gold,
             minutes,
             author,
             Self::org_scope(),
@@ -624,9 +915,18 @@ impl Builder {
             minutes += 20;
             let other_value = other.values[self.rng.gen_range(0..other.values.len())];
             let author = self.user();
+            let slot = self.event_slot(other);
+            let content = self.text(
+                T_DECIDED,
+                &[
+                    ("project", &project),
+                    ("slot", slot),
+                    ("value", other_value),
+                ],
+            );
             self.event(
                 format!("{id}-same-project-{}", n + 1),
-                format!("{project} decided its {} is {other_value}.", other.name),
+                content,
                 minutes,
                 author,
                 Self::org_scope(),
@@ -637,27 +937,30 @@ impl Builder {
         minutes += 20;
         let decoy_value = target.values[self.rng.gen_range(0..target.values.len())];
         let author = self.user();
+        let slot = self.event_slot(target);
+        let decoy = self.text(
+            T_DECIDED,
+            &[
+                ("project", &decoy_project),
+                ("slot", slot),
+                ("value", decoy_value),
+            ],
+        );
         self.event(
             format!("{id}-same-slot"),
-            format!(
-                "{decoy_project} decided its {} is {decoy_value}.",
-                target.name
-            ),
+            decoy,
             minutes,
             author,
             Self::org_scope(),
             &decoy_project,
             None,
         );
-        let slot_words = if index.is_multiple_of(2) {
-            target.name
-        } else {
-            target.alias
-        };
+        let slot_words = self.question_slot(target, !index.is_multiple_of(2));
         let asker = self.user();
+        let query = self.text(T_SLOT_Q, &[("project", &project), ("slot", slot_words)]);
         self.question(
             format!("{id}-q"),
-            format!("What is {project}'s {slot_words}?"),
+            query,
             minutes + 120,
             asker,
             vec![format!("{id}-gold")],
@@ -677,9 +980,14 @@ impl Builder {
         let value = target.values[self.rng.gen_range(0..target.values.len())];
 
         let author = self.user();
+        let slot = self.event_slot(target);
+        let gold = self.text(
+            T_DECIDED,
+            &[("project", &project), ("slot", slot), ("value", value)],
+        );
         self.event(
             format!("{id}-gold"),
-            format!("{project} decided its {} is {value}.", target.name),
+            gold,
             0,
             author,
             Self::org_scope(),
@@ -689,9 +997,18 @@ impl Builder {
         for (n, other) in slots[1..4].iter().enumerate() {
             let other_value = other.values[self.rng.gen_range(0..other.values.len())];
             let author = self.user();
+            let slot = self.event_slot(other);
+            let content = self.text(
+                T_DECIDED,
+                &[
+                    ("project", &project),
+                    ("slot", slot),
+                    ("value", other_value),
+                ],
+            );
             self.event(
                 format!("{id}-same-project-{}", n + 1),
-                format!("{project} decided its {} is {other_value}.", other.name),
+                content,
                 20 * (n as i64 + 1),
                 author,
                 Self::org_scope(),
@@ -700,19 +1017,21 @@ impl Builder {
             );
         }
         let asker = self.user();
+        let original_slot = self.question_slot(target, false);
+        let original = self.text(T_SLOT_Q, &[("project", &project), ("slot", original_slot)]);
         self.question(
             format!("{id}-q"),
-            format!("What is {project}'s {}?", target.name),
+            original,
             180,
             asker.clone(),
             vec![format!("{id}-gold")],
             value,
         );
-        let reworded = if index.is_multiple_of(2) {
-            format!("Which {} did {project} settle on?", target.alias)
-        } else {
-            format!("Remind me of {project}'s {}.", target.alias)
-        };
+        let reworded = self.text_by_parity(
+            T_REPHRASE,
+            index,
+            &[("project", &project), ("slot", target.alias)],
+        );
         self.question(
             format!("rephrase-{index:03}-q"),
             reworded,
@@ -735,9 +1054,14 @@ impl Builder {
         let id = format!("stable-{index:03}");
         let value = target.values[self.rng.gen_range(0..target.values.len())];
         let author = self.user();
+        let slot = self.event_slot(target);
+        let gold = self.text(
+            T_DECIDED,
+            &[("project", &project), ("slot", slot), ("value", value)],
+        );
         self.event(
             format!("{id}-gold"),
-            format!("{project} decided its {} is {value}.", target.name),
+            gold,
             0,
             author,
             Self::org_scope(),
@@ -762,11 +1086,19 @@ impl Builder {
                 .collect();
             let next = candidates[self.rng.gen_range(0..candidates.len())];
             let event_id = format!("{id}-update-{}", step + 1);
-            let content = if taken.is_none() {
-                format!("{project} decided its {} is {next}.", attribute.name)
-            } else {
-                format!("{project} changed its {} to {next}.", attribute.name)
-            };
+            let update_slot = self.event_slot(attribute);
+            let content = self.text(
+                if taken.is_none() {
+                    T_DECIDED
+                } else {
+                    T_CHANGED
+                },
+                &[
+                    ("project", &project),
+                    ("slot", update_slot),
+                    ("value", next),
+                ],
+            );
             let author = self.user();
             let supersedes = latest[slot].take().map(|(previous_id, _)| previous_id);
             self.event(
@@ -780,15 +1112,12 @@ impl Builder {
             );
             latest[slot] = Some((event_id, next));
         }
-        let slot_words = if index.is_multiple_of(2) {
-            target.name
-        } else {
-            target.alias
-        };
+        let slot_words = self.question_slot(target, !index.is_multiple_of(2));
         let asker = self.user();
+        let query = self.text(T_SLOT_Q, &[("project", &project), ("slot", slot_words)]);
         self.question(
             format!("{id}-q"),
-            format!("What is {project}'s {slot_words}?"),
+            query,
             minutes + 120,
             asker,
             vec![format!("{id}-gold")],
@@ -809,14 +1138,24 @@ pub fn generate(config: &GeneratorConfig) -> Stream {
         + config.agent_items
         + config.paraphrase_pairs
         + config.stable_items;
-    let mut names: Vec<String> = PREFIXES
-        .iter()
-        .flat_map(|prefix| {
-            SUFFIXES
-                .iter()
-                .map(move |suffix| format!("{prefix}{suffix}"))
-        })
-        .collect();
+    let mut names: Vec<String> = match config.profile {
+        Profile::Codename => PREFIXES
+            .iter()
+            .flat_map(|prefix| {
+                SUFFIXES
+                    .iter()
+                    .map(move |suffix| format!("{prefix}{suffix}"))
+            })
+            .collect(),
+        Profile::NaturalNames => NATURAL_ADJECTIVES
+            .iter()
+            .flat_map(|adjective| {
+                NATURAL_NOUNS
+                    .iter()
+                    .map(move |noun| format!("{adjective} {noun}"))
+            })
+            .collect(),
+    };
     assert!(
         needed <= names.len(),
         "{needed} unique project names requested, {} available",
@@ -848,6 +1187,7 @@ pub fn generate(config: &GeneratorConfig) -> Stream {
     order.shuffle(&mut rng);
 
     let mut builder = Builder {
+        profile: config.profile,
         rng,
         names,
         day: 0,
@@ -878,7 +1218,7 @@ pub fn to_jsonl(stream: &Stream, config: &GeneratorConfig) -> String {
         "# Generated by cognoscenti --generate-stream; no model in the loop.\n\
          # seed={} scope_trials={} supersession_chains={} retrieval_questions={} \
          owner_trials={} individual_items={} agent_items={} \
-         paraphrase_pairs={} stable_items={}\n",
+         paraphrase_pairs={} stable_items={}{}\n",
         config.seed,
         config.scope_trials,
         config.supersession_chains,
@@ -887,7 +1227,11 @@ pub fn to_jsonl(stream: &Stream, config: &GeneratorConfig) -> String {
         config.individual_items,
         config.agent_items,
         config.paraphrase_pairs,
-        config.stable_items
+        config.stable_items,
+        match config.profile {
+            Profile::Codename => "",
+            Profile::NaturalNames => " profile=natural-names",
+        }
     );
     for item in &stream.items {
         out.push_str(&serde_json::to_string(item).expect("stream items serialise"));
@@ -1050,6 +1394,7 @@ mod tests {
             agent_items: 2,
             paraphrase_pairs: 3,
             stable_items: 4,
+            profile: Profile::Codename,
         };
         assert_eq!(generate(&config).questions().count(), 30 + 6 + 4);
     }
@@ -1177,5 +1522,185 @@ mod tests {
             lengths.insert(updates);
         }
         assert_eq!(lengths.len(), 5, "{lengths:?}");
+    }
+
+    const REGISTERED_DEFAULT_SHA256: &str =
+        "2fc8d6c2ba4e9cff4979945653264ddcc79cec1e86e7038c8a0feccf7f5693e2";
+
+    fn natural(seed: u64) -> GeneratorConfig {
+        GeneratorConfig {
+            profile: Profile::NaturalNames,
+            ..GeneratorConfig::new(seed)
+        }
+    }
+
+    fn project_names(stream: &Stream) -> Vec<String> {
+        let mut names: Vec<String> = stream
+            .events()
+            .flat_map(|e| e.entities.iter().map(|r| r.display_name.clone()))
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    #[test]
+    fn the_default_profile_still_writes_the_registered_bytes() {
+        // The registered dataset's checksum is in the pre-registration, so
+        // adding a profile must not move a single byte of the default.
+        let config = GeneratorConfig::new(0);
+        let bytes = to_jsonl(&generate(&config), &config);
+        assert_eq!(
+            crate::manifest::sha256_hex(bytes.as_bytes()),
+            REGISTERED_DEFAULT_SHA256
+        );
+    }
+
+    #[test]
+    fn the_natural_names_profile_is_deterministic_and_seeded() {
+        let a = natural(3);
+        assert_eq!(to_jsonl(&generate(&a), &a), to_jsonl(&generate(&a), &a));
+        let items = |c: &GeneratorConfig| {
+            to_jsonl(&generate(c), c)
+                .lines()
+                .filter(|l| !l.starts_with('#'))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_ne!(items(&natural(3)), items(&natural(4)));
+    }
+
+    #[test]
+    fn the_natural_names_profile_differs_from_the_default_and_says_so_in_its_header() {
+        let n = natural(0);
+        let text = to_jsonl(&generate(&n), &n);
+        assert!(text
+            .lines()
+            .nth(1)
+            .unwrap()
+            .contains("profile=natural-names"));
+        let d = GeneratorConfig::new(0);
+        assert_ne!(text, to_jsonl(&generate(&d), &d));
+    }
+
+    #[test]
+    fn the_natural_names_profile_keeps_every_category_count() {
+        let n = generate(&natural(0));
+        let d = generate(&GeneratorConfig::new(0));
+        for prefix in [
+            "scope-",
+            "owner-",
+            "individual-",
+            "agent-",
+            "supersede-",
+            "retrieve-",
+            "paraphrase-",
+            "rephrase-",
+            "stable-",
+        ] {
+            assert_eq!(
+                category_questions(&n, prefix).len(),
+                category_questions(&d, prefix).len(),
+                "{prefix}"
+            );
+        }
+        assert_eq!(n.questions().count(), 860);
+    }
+
+    #[test]
+    fn natural_projects_are_two_natural_words_that_recur_across_trials() {
+        let stream = generate(&natural(0));
+        let names = project_names(&stream);
+        assert!(names.len() >= 860, "{} names", names.len());
+        let mut uses: HashMap<&str, usize> = HashMap::new();
+        for name in &names {
+            let words: Vec<&str> = name.split(' ').collect();
+            assert_eq!(words.len(), 2, "{name}");
+            assert!(NATURAL_ADJECTIVES.contains(&words[0]), "{name}");
+            assert!(NATURAL_NOUNS.contains(&words[1]), "{name}");
+            for word in words {
+                *uses.entry(word).or_default() += 1;
+            }
+        }
+        // No coined token appears in only one project: every word is shared.
+        let rarest = uses.values().min().copied().unwrap();
+        assert!(
+            rarest >= 3,
+            "a name word is used by only {rarest} project(s)"
+        );
+    }
+
+    #[test]
+    fn natural_profile_facts_are_not_all_worded_the_same_way() {
+        let stream = generate(&natural(0));
+        let names = project_names(&stream);
+        let shape = |content: &str| {
+            let mut masked = content.to_string();
+            for name in &names {
+                masked = masked.replace(name.as_str(), "P");
+            }
+            masked
+                .split_whitespace()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let opening: HashSet<String> = stream
+            .events()
+            .filter(|e| e.id.starts_with("retrieve-") && e.id.ends_with("-gold"))
+            .map(|e| shape(&e.content))
+            .collect();
+        assert!(opening.len() >= 3, "{opening:?}");
+        let questions: HashSet<String> = stream
+            .questions()
+            .filter(|q| q.id.starts_with("retrieve-"))
+            .map(|q| shape(&q.query))
+            .collect();
+        assert!(questions.len() >= 3, "{questions:?}");
+    }
+
+    #[test]
+    fn the_natural_names_stream_passes_lint_and_keeps_queries_unique() {
+        let config = natural(0);
+        let stream = generate(&config);
+        assert!(lint(&stream).is_empty(), "{:?}", lint(&stream));
+        let reloaded = Stream::from_jsonl(&to_jsonl(&stream, &config)).unwrap();
+        assert_eq!(reloaded.items.len(), stream.items.len());
+        let queries: HashSet<&str> = stream.questions().map(|q| q.query.as_str()).collect();
+        assert_eq!(queries.len(), stream.questions().count());
+    }
+
+    #[test]
+    fn natural_profile_possessives_read_naturally() {
+        let stream = generate(&natural(0));
+        let bad: Vec<&str> = stream
+            .events()
+            .map(|e| e.content.as_str())
+            .chain(stream.questions().map(|q| q.query.as_str()))
+            .filter(|text| text.contains("s's"))
+            .take(3)
+            .collect();
+        assert!(bad.is_empty(), "{bad:?}");
+    }
+
+    #[test]
+    fn natural_events_use_both_a_slot_name_and_its_alias() {
+        let stream = generate(&natural(0));
+        let gold: Vec<&str> = stream
+            .events()
+            .filter(|e| e.id.starts_with("retrieve-") && e.id.ends_with("-gold"))
+            .map(|e| e.content.as_str())
+            .collect();
+        let uses = |word: fn(&Attribute) -> &'static str| {
+            gold.iter()
+                .filter(|c| ATTRIBUTES.iter().any(|a| c.contains(word(a))))
+                .count()
+        };
+        let by_name = uses(|a| a.name);
+        let by_alias = uses(|a| a.alias);
+        assert!(
+            by_name > 10 && by_alias > 10,
+            "{by_name} by name, {by_alias} by alias"
+        );
     }
 }

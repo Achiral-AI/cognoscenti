@@ -212,3 +212,28 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    warning (this commit), and the poll budget is set apart from the blind wait with
    `COGNOSCENTI_ACHIRAL_CONFIRM_MS`. The restart uses a replacement org for each discarded
    one. `COGNOSCENTI_ACHIRAL_SETTLE_MS` in item 6 applies to the blind wait only.
+8. **Second dataset variant, `natural-names`, registered 2026-11-17. Not yet run against
+   Achiral.** The registered dataset (sha256 `2fc8d6c2…93e2`, unchanged and byte-identical, a
+   test pins it) gives every trial a unique coined project name and uses one wording per kind of
+   note. Replicate 0 showed `bm25` far ahead of Achiral on categories where the question names
+   the project (`bm25` 1.00 on `paraphrase`, Achiral 0.61), and the diagnosis reads that as the
+   coined token acting as a lexical giveaway to a lexical system and as a rare unseen token to a
+   dense one. The variant keeps the categories, counts, seeding and determinism but changes two
+   things: project names are two natural words (36 adjectives by 36 nouns, each word shared by
+   about 25 projects, only the pair unique), and each kind of note has several wordings, with
+   events using a slot's name or its alias at random.
+
+   | Field | Value |
+   |---|---|
+   | File | `datasets/generated/trust-seed-0-natural-names/stream.jsonl` |
+   | sha256 | `b3e7ba723ddf28a62a9a36613f80f617b2c8bcb9578baeb8c9243be14c72881c` |
+   | Generator | `cognoscenti --generate-stream <path> --seed 0 --generate-profile natural-names` |
+   | Size | 2984 events, 860 questions (same category counts as the registered dataset) |
+   | With `--skip-user-scope` | 543 questions kept, 317 trials dropped (`scope` 232, `owner` 55, `individual` 30). The random draws differ from the registered dataset, so the split differs by one question. |
+
+   The variant is a separate dataset with its own rows. It is never pooled with the registered
+   dataset's results and is not a replacement for it. A comparison on it will be a labelled
+   cohort set, announced as its own deviation before it runs. Local baselines were run on the
+   variant first: `bm25` recall@3 on the 543 kept questions is 0.694 (0.870 on the registered
+   subset), so the gap to a lexical baseline narrows by design.
+
