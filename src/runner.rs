@@ -85,6 +85,13 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub label: Option<String>,
 
+    /// Drop every generated trial that holds a user-scope event, and say how
+    /// many were dropped. For a deployment whose per-member routes are
+    /// disabled: a refused write must not be scored as "nothing leaked".
+    /// Hand-made datasets are never touched. Only used with `--replay-stream`.
+    #[clap(long)]
+    pub skip_user_scope: bool,
+
     /// Number of equal-width bins for calibration (reliability curve,
     /// expected calibration error). Only used with `--replay-stream`.
     #[clap(long, default_value = "10")]
@@ -127,6 +134,13 @@ mod tests {
         let config = BenchmarkConfig::parse_from(["cognoscenti", "--generate-stream", "out.jsonl"]);
         assert_eq!(config.generate_stream.as_deref(), Some("out.jsonl"));
         assert_eq!((config.scope_trials, config.items_per_category), (300, 70));
+    }
+
+    #[test]
+    fn skip_user_scope_is_off_by_default() {
+        assert!(!BenchmarkConfig::parse_from(["cognoscenti"]).skip_user_scope);
+        let on = BenchmarkConfig::parse_from(["cognoscenti", "--skip-user-scope"]);
+        assert!(on.skip_user_scope);
     }
 
     #[test]

@@ -204,6 +204,42 @@ pub fn leak_trial_flags(trials: &[LeakTrial]) -> Vec<bool> {
         .collect()
 }
 
+/// `scope-017-private` -> `scope-017`: the trial a generated event or
+/// question belongs to. `None` for any other id, so hand-made datasets are
+/// never regrouped.
+fn trial_key(id: &str) -> Option<String> {
+    let mut parts = id.splitn(3, '-');
+    let category = parts.next()?;
+    let digits = parts.next()?;
+    (!category.is_empty() && !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| format!("{category}-{digits}"))
+}
+
+/// Removes every item of each generated trial that holds a user-scope
+/// event, and returns the dropped trial keys in first-seen order. A trial
+/// is the events and the question that share a `category-NNN` id prefix.
+pub fn drop_user_scope_trials(stream: &Stream) -> (Stream, Vec<String>) {
+    let mut dropped: Vec<String> = Vec::new();
+    for item in &stream.items {
+        if let StreamItem::Event(event) = item {
+            if event.scope.kind == crate::stream::ScopeKind::User {
+                if let Some(key) = trial_key(&event.id) {
+                    if !dropped.contains(&key) {
+                        dropped.push(key);
+                    }
+                }
+            }
+        }
+    }
+    let kept = stream
+        .items
+        .iter()
+        .filter(|item| trial_key(item.id()).is_none_or(|key| !dropped.contains(&key)))
+        .cloned()
+        .collect();
+    (Stream { items: kept }, dropped)
+}
+
 /// The replay's run label line, so output records settings the harness
 /// cannot see (a system's noise scale). Blank labels print nothing.
 pub fn label_line(label: Option<&str>) -> Option<String> {
@@ -640,9 +676,32 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         .replay_stream
         .as_ref()
         .expect("run_baseline_replay requires --replay-stream");
-    let stream = Stream::load(path)?;
+    let mut stream = Stream::load(path)?;
     if let Some(line) = label_line(config.label.as_deref()) {
         println!("{line}");
+    }
+    if config.skip_user_scope {
+        let (kept, dropped) = drop_user_scope_trials(&stream);
+        println!(
+            "not run: {} trial(s) holding a user-scope event (user scope unavailable, Plan 41); {} question(s) kept",
+            dropped.len(),
+            kept.questions().count()
+        );
+        let mut by_category: Vec<(String, usize)> = Vec::new();
+        for key in &dropped {
+            let category = key
+                .rsplit_once('-')
+                .map_or(key.as_str(), |(c, _)| c)
+                .to_string();
+            match by_category.iter_mut().find(|(c, _)| *c == category) {
+                Some((_, n)) => *n += 1,
+                None => by_category.push((category, 1)),
+            }
+        }
+        for (category, n) in by_category {
+            println!("  not run, {category}: {n}");
+        }
+        stream = kept;
     }
 
     for name in parse_systems(&config.systems) {
@@ -1017,6 +1076,69 @@ mod tests {
             lines.contains("more than 8 later updates: accuracy 1.0000 (n=1"),
             "{lines}"
         );
+    }
+
+    fn event_line(id: &str, scope_kind: &str, scope_id: &str) -> String {
+        format!(
+            r#"{{"kind":"event","id":"{id}","content":"x","timestamp":"2026-01-01T00:00:00Z","actor":{{"id":"a","kind":"user"}},"scope":{{"kind":"{scope_kind}","id":"{scope_id}"}},"source":"s"}}"#
+        )
+    }
+
+    fn question_line(id: &str) -> String {
+        format!(
+            r#"{{"kind":"question","id":"{id}","query":"q","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"a","kind":"user"}},"gold_event_ids":[]}}"#
+        )
+    }
+
+    #[test]
+    fn dropping_user_scope_trials_removes_every_item_of_a_trial_that_holds_one() {
+        let stream = Stream::from_jsonl(
+            &[
+                event_line("scope-000-private", "user", "ben"),
+                event_line("scope-000-org", "org", "o"),
+                question_line("scope-000-q"),
+                event_line("scope-001-private", "agent", "bot"),
+                question_line("scope-001-q"),
+                // Not a generated id: left alone even with a user-scope event.
+                event_line("sam-e1", "user", "sam"),
+                question_line("sam-q1"),
+                // `scope-1` must not match `scope-10-...` by prefix.
+                event_line("scope-10-private", "agent", "bot"),
+                question_line("scope-10-q"),
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let (kept, dropped) = drop_user_scope_trials(&stream);
+        let ids: Vec<&str> = kept.items.iter().map(|i| i.id()).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "scope-001-private",
+                "scope-001-q",
+                "sam-e1",
+                "sam-q1",
+                "scope-10-private",
+                "scope-10-q"
+            ]
+        );
+        assert_eq!(dropped, vec!["scope-000".to_string()]);
+    }
+
+    #[test]
+    fn the_default_generated_stream_keeps_the_544_questions_the_preregistration_names() {
+        let stream = crate::generator::generate(&crate::generator::GeneratorConfig::new(0));
+        let (kept, dropped) = drop_user_scope_trials(&stream);
+        assert_eq!(kept.questions().count(), 544);
+        assert_eq!(dropped.len(), 316);
+        let count = |prefix: &str| dropped.iter().filter(|t| t.starts_with(prefix)).count();
+        assert_eq!(
+            (count("scope-"), count("owner-"), count("individual-")),
+            (229, 52, 35)
+        );
+        assert!(kept
+            .events()
+            .all(|e| e.scope.kind != crate::stream::ScopeKind::User));
     }
 
     #[test]

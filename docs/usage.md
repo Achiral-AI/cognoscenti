@@ -289,6 +289,15 @@ label: activationNoiseScale=0.2
 === bm25 ===
 ```
 
+### Skipping user-scope trials
+
+`--skip-user-scope` drops every generated trial that holds a user-scope event and
+prints how many it dropped, by category. Use it against a deployment whose
+per-member routes are disabled: a refused write is not evidence that nothing
+leaks, so those trials are reported as "not run", never scored. Hand-made
+datasets are never touched. On the default generated stream it keeps 544 of 860
+questions (drops 316: 229 `scope`, 52 `owner`, 35 `individual`).
+
 ### Generated streams
 
 What it's for: enough questions for a CI that means something. The nine

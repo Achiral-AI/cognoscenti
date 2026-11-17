@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `--skip-user-scope`: drop generated trials that hold a user-scope event and
+  report them as not run, for deployments with per-member routes disabled.
 - `--label`: free-text run label printed at the top of a replay, for settings
   outside the harness such as a noise scale.
 - `src/stats.rs`: seeded 95% bootstrap CIs over questions, exact McNemar
