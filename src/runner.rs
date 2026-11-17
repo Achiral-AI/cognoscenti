@@ -91,6 +91,18 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub label: Option<String>,
 
+    /// Append one record per replicate start and finish to this file, so a
+    /// crash loses at most the replicate in flight. Needs `--replicates` > 1.
+    /// An existing non-empty file is refused unless `--resume` is given.
+    #[clap(long)]
+    pub replicate_log: Option<std::path::PathBuf>,
+
+    /// Skip replicates `--replicate-log` shows finished and run the rest.
+    /// Each remaining replicate must use a fresh org (a key not yet in the
+    /// log): a crashed replicate's org already holds part of the stream.
+    #[clap(long, requires = "replicate_log")]
+    pub resume: bool,
+
     /// Drop every generated trial that holds a user-scope event, and say how
     /// many were dropped. For a deployment whose per-member routes are
     /// disabled: a refused write must not be scored as "nothing leaked".
@@ -158,6 +170,18 @@ mod tests {
         assert!(!BenchmarkConfig::parse_from(["cognoscenti"]).skip_user_scope);
         let on = BenchmarkConfig::parse_from(["cognoscenti", "--skip-user-scope"]);
         assert!(on.skip_user_scope);
+    }
+
+    #[test]
+    fn replicate_log_and_resume_are_off_by_default_and_resume_needs_the_log() {
+        let none = BenchmarkConfig::parse_from(["cognoscenti"]);
+        assert_eq!(none.replicate_log, None);
+        assert!(!none.resume);
+        let on =
+            BenchmarkConfig::parse_from(["cognoscenti", "--replicate-log", "r.jsonl", "--resume"]);
+        assert_eq!(on.replicate_log, Some("r.jsonl".into()));
+        assert!(on.resume);
+        assert!(BenchmarkConfig::try_parse_from(["cognoscenti", "--resume"]).is_err());
     }
 
     #[test]

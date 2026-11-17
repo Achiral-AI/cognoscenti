@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- The `achiral` adapter retries transient failures (connection errors, HTTP 502/503/504,
+  non-JSON error pages) with capped exponential backoff and jitter, default 8 retries,
+  configurable with `COGNOSCENTI_ACHIRAL_MAX_RETRIES` (0 to 10),
+  `COGNOSCENTI_ACHIRAL_RETRY_BASE_MS` and `COGNOSCENTI_ACHIRAL_RETRY_CAP_MS`. Real API error
+  bodies still stop the run at once. Every write now sends an `Idempotency-Key`.
+- `--replicate-log` and `--resume`: each replicate prints a summary line and is logged as it
+  finishes; a resumed run skips finished replicates and refuses an org the log already used.
 - `--generate-profile natural-names`: a second generated dataset with natural two-word
   project names and varied wording, so a unique coined token is not a lexical giveaway. The
   default profile is unchanged byte for byte.

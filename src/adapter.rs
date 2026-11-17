@@ -17,7 +17,7 @@ use crate::stability::paraphrase_agreement;
 use crate::stats::{bootstrap_ci_95, bootstrap_statistic_ci_95, describe_event_rate};
 use crate::stream::{Actor, Stream, StreamEvent, StreamItem};
 use crate::tokens::{approx_token_count, geometric_checkpoints};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 
@@ -514,34 +514,42 @@ pub fn replay_stream(
 /// that point in the stream.
 pub fn replay_stream_replicated(
     stream: &Stream,
+    build_system: impl FnMut(usize) -> Box<dyn MemorySystem>,
+    top_k: usize,
+    replicates: usize,
+    first_replicate_results: Option<&[QuestionResult]>,
+) -> Vec<Vec<bool>> {
+    replay_stream_replicated_with(
+        stream,
+        build_system,
+        top_k,
+        replicates,
+        first_replicate_results,
+        &std::collections::BTreeMap::new(),
+        |_, _| {},
+    )
+}
+
+/// `replay_stream_replicated` for a long run that must survive a crash:
+/// `already_done` holds outcomes of replicates a log says finished (they are
+/// neither built nor replayed), and `on_finished` is called with each
+/// replicate this call runs, as it ends, so the caller can save it before the
+/// next one starts. It is not called for `first_replicate_results`.
+pub fn replay_stream_replicated_with(
+    stream: &Stream,
     mut build_system: impl FnMut(usize) -> Box<dyn MemorySystem>,
     top_k: usize,
     replicates: usize,
     first_replicate_results: Option<&[QuestionResult]>,
+    already_done: &std::collections::BTreeMap<usize, Vec<bool>>,
+    mut on_finished: impl FnMut(usize, &[QuestionResult]),
 ) -> Vec<Vec<bool>> {
     assert!(replicates > 0, "need at least one replicate");
     let num_questions = stream.questions().count();
     let mut outcomes: Vec<Vec<bool>> = vec![Vec::with_capacity(replicates); num_questions];
 
     let debug = std::env::var("COGNOSCENTI_DEBUG_REPLICATES").is_ok();
-    let start_index = if let Some(results) = first_replicate_results {
-        for (i, result) in results.iter().enumerate() {
-            if debug {
-                eprintln!(
-                    "[replicate 0] {} recall@{top_k}={:.4} retrieved={:?}",
-                    result.question_id, result.recall_at_k, result.retrieved_ids
-                );
-            }
-            outcomes[i].push(result.recall_at_k >= 1.0);
-        }
-        1
-    } else {
-        0
-    };
-
-    for index in start_index..replicates {
-        let mut system = build_system(index);
-        let results = replay_stream(stream, system.as_mut(), top_k);
+    let push_results = |index: usize, results: &[QuestionResult], outcomes: &mut Vec<Vec<bool>>| {
         for (i, result) in results.iter().enumerate() {
             if debug {
                 eprintln!(
@@ -550,6 +558,21 @@ pub fn replay_stream_replicated(
                 );
             }
             outcomes[i].push(result.recall_at_k >= 1.0);
+        }
+    };
+
+    for index in 0..replicates {
+        if let Some(passes) = already_done.get(&index) {
+            for (i, pass) in passes.iter().enumerate() {
+                outcomes[i].push(*pass);
+            }
+        } else if let (0, Some(first)) = (index, first_replicate_results) {
+            push_results(0, first, &mut outcomes);
+        } else {
+            let mut system = build_system(index);
+            let results = replay_stream(stream, system.as_mut(), top_k);
+            push_results(index, &results, &mut outcomes);
+            on_finished(index, &results);
         }
     }
     outcomes
@@ -705,6 +728,17 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
     }
 
     for name in parse_systems(&config.systems) {
+        let (log, done) = open_replicate_log(config, std::path::Path::new(path), &stream, &name)?;
+        if done.contains_key(&0) {
+            // Replicate 0's report was printed by the run being resumed.
+            println!("=== {name} (resumed) ===");
+            println!(
+                "  replicate(s) {:?} loaded from the replicate log; their report is in the earlier output",
+                done.keys().collect::<Vec<_>>()
+            );
+            run_replicate_section(config, &stream, &name, None, &done, log.as_ref())?;
+            continue;
+        }
         let mut system = build_system(
             &name,
             config.recency_half_life_days,
@@ -721,6 +755,11 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             continue;
         }
 
+        if config.replicates > 1 {
+            if let Some(log) = &log {
+                log.started(0, &name)?;
+            }
+        }
         let results = replay_stream(&stream, system.as_mut(), config.top_k);
         println!("=== {name} ===");
         for result in &results {
@@ -808,31 +847,218 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         }
 
         if config.replicates > 1 {
-            let recency_half_life_days = config.recency_half_life_days;
-            let bounded_window_size = config.bounded_window_size;
-            let name_for_replicates = name.clone();
-            let outcomes = replay_stream_replicated(
-                &stream,
-                move |index| {
-                    build_system_for_replicate(
-                        &name_for_replicates,
-                        index,
-                        recency_half_life_days,
-                        bounded_window_size,
-                    )
-                    .expect("system name already validated above, or COGNOSCENTI_ACHIRAL_API_KEYS has too few keys for this many replicates")
-                },
-                config.top_k,
-                config.replicates,
-                Some(&results),
-            );
-            println!(
-                "  questions that flipped across {} replicate(s): {}",
-                config.replicates,
-                describe_event_rate(&crate::stability::flipped_questions(&outcomes), config.seed)
-            );
+            run_replicate_section(config, &stream, &name, Some(&results), &done, log.as_ref())?;
         }
     }
+    Ok(())
+}
+
+/// The replicate log a run writes, with the identity every record carries.
+struct ReplicateLog {
+    path: std::path::PathBuf,
+    run: crate::replicate_log::RunIdentity,
+}
+
+impl ReplicateLog {
+    fn started(&self, replicate: usize, system: &str) -> Result<()> {
+        let key_id = if system == "achiral" {
+            crate::achiral_http::api_key_id_for_replicate(replicate)?
+        } else {
+            None
+        };
+        crate::replicate_log::append(
+            &self.path,
+            &crate::replicate_log::LogRecord::Started {
+                run: self.run.clone(),
+                replicate,
+                key_id,
+            },
+        )
+    }
+
+    fn finished(&self, replicate: usize, system: &str, passes: Vec<bool>) -> Result<()> {
+        let key_id = if system == "achiral" {
+            crate::achiral_http::api_key_id_for_replicate(replicate)?
+        } else {
+            None
+        };
+        crate::replicate_log::append(
+            &self.path,
+            &crate::replicate_log::LogRecord::Finished {
+                run: self.run.clone(),
+                replicate,
+                key_id,
+                passes,
+            },
+        )
+    }
+}
+
+type OpenedLog = (
+    Option<ReplicateLog>,
+    std::collections::BTreeMap<usize, Vec<bool>>,
+);
+
+/// Opens `--replicate-log` for one system. Without `--resume` the file must
+/// be new or empty. With it, finished replicates are returned, and every
+/// replicate still to run must have a key the log has not seen.
+fn open_replicate_log(
+    config: &BenchmarkConfig,
+    stream_path: &std::path::Path,
+    stream: &Stream,
+    system: &str,
+) -> Result<OpenedLog> {
+    let none = Ok((None, std::collections::BTreeMap::new()));
+    let Some(path) = config
+        .replicate_log
+        .as_ref()
+        .filter(|_| config.replicates > 1)
+    else {
+        return none;
+    };
+    let bytes = std::fs::read(stream_path)
+        .with_context(|| format!("reading {} to identify the stream", stream_path.display()))?;
+    let run = crate::replicate_log::RunIdentity {
+        system: system.to_string(),
+        stream_sha256: {
+            use sha2::Digest;
+            format!("{:x}", sha2::Sha256::digest(&bytes))
+        },
+        top_k: config.top_k,
+        seed: config.seed,
+    };
+    let existing = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
+    };
+    let mut done = std::collections::BTreeMap::new();
+    if config.resume {
+        let state = crate::replicate_log::parse_log(&existing, &run)?;
+        crate::replicate_log::check_finished_shape(&state, stream.questions().count())?;
+        for index in 0..config.replicates {
+            if state.finished.contains_key(&index) {
+                continue;
+            }
+            let key = if system == "achiral" {
+                crate::achiral_http::api_key_id_for_replicate(index)?
+            } else {
+                None
+            };
+            crate::replicate_log::check_fresh_org(&state, index, key.as_deref())?;
+        }
+        done = state
+            .finished
+            .into_iter()
+            .filter(|(index, _)| *index < config.replicates)
+            .collect();
+    } else if !existing.trim().is_empty() {
+        anyhow::bail!(
+            "{} already has records; pass --resume to continue that run or choose a new path",
+            path.display()
+        );
+    }
+    Ok((
+        Some(ReplicateLog {
+            path: path.clone(),
+            run,
+        }),
+        done,
+    ))
+}
+
+/// One line for a finished replicate, printed (and logged) before the next
+/// replicate starts.
+fn replicate_summary(
+    stream: &Stream,
+    index: usize,
+    top_k: usize,
+    results: &[QuestionResult],
+) -> (String, Vec<bool>) {
+    let passes: Vec<bool> = results.iter().map(|r| r.recall_at_k >= 1.0).collect();
+    let mean = results.iter().map(|r| r.recall_at_k).sum::<f64>() / results.len().max(1) as f64;
+    // Same trials `leak_lines` reports: on a generated stream only the
+    // categories that hold a private memory, so n matches that report.
+    let private: Vec<QuestionResult> = results
+        .iter()
+        .filter(|r| matches!(category_of(&r.question_id), Some("scope" | "agent")))
+        .cloned()
+        .collect();
+    let counted = if private.is_empty() {
+        results
+    } else {
+        &private
+    };
+    let flags = leak_trial_flags(&leak_trials(stream, counted));
+    let line = crate::replicate_log::summary_line(
+        index,
+        top_k,
+        mean,
+        &passes,
+        flags.iter().filter(|f| **f).count(),
+        flags.len(),
+    );
+    (line, passes)
+}
+
+/// Runs replicates 1.. (and replicate 0 unless `first` or the log has it),
+/// saving each as it finishes, then prints the flip rate across all of them.
+fn run_replicate_section(
+    config: &BenchmarkConfig,
+    stream: &Stream,
+    name: &str,
+    first: Option<&[QuestionResult]>,
+    done: &std::collections::BTreeMap<usize, Vec<bool>>,
+    log: Option<&ReplicateLog>,
+) -> Result<()> {
+    if let Some(results) = first {
+        let (line, passes) = replicate_summary(stream, 0, config.top_k, results);
+        println!("{line}");
+        if let Some(log) = log {
+            log.finished(0, name, passes)?;
+        }
+    }
+    let recency_half_life_days = config.recency_half_life_days;
+    let bounded_window_size = config.bounded_window_size;
+    let name_for_build = name.to_string();
+    let mut log_failure: Option<anyhow::Error> = None;
+    let outcomes = replay_stream_replicated_with(
+        stream,
+        |index| {
+            if let Some(log) = log {
+                log.started(index, name)
+                    .unwrap_or_else(|err| panic!("replicate log: {err:#}"));
+            }
+            build_system_for_replicate(
+                &name_for_build,
+                index,
+                recency_half_life_days,
+                bounded_window_size,
+            )
+            .expect("system name already validated above, or COGNOSCENTI_ACHIRAL_API_KEYS has too few keys for this many replicates")
+        },
+        config.top_k,
+        config.replicates,
+        first,
+        done,
+        |index, results| {
+            let (line, passes) = replicate_summary(stream, index, config.top_k, results);
+            println!("{line}");
+            if let Some(log) = log {
+                if let Err(err) = log.finished(index, name, passes) {
+                    log_failure.get_or_insert(err);
+                }
+            }
+        },
+    );
+    if let Some(err) = log_failure {
+        return Err(err);
+    }
+    println!(
+        "  questions that flipped across {} replicate(s): {}",
+        config.replicates,
+        describe_event_rate(&crate::stability::flipped_questions(&outcomes), config.seed)
+    );
     Ok(())
 }
 
@@ -1368,6 +1594,61 @@ mod tests {
         );
 
         assert_eq!(seen_indices, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn replicates_already_in_the_log_are_not_rebuilt_and_keep_their_stored_outcomes() {
+        let stream = Stream {
+            items: vec![StreamItem::Question(question_asked_by("q1", "pm"))],
+        };
+        let mut built = Vec::new();
+        let mut finished = Vec::new();
+        let done = std::collections::BTreeMap::from([(0, vec![false]), (1, vec![true])]);
+
+        let outcomes = replay_stream_replicated_with(
+            &stream,
+            |index| {
+                built.push(index);
+                Box::new(SeenSoFar { seen: Vec::new() })
+            },
+            10,
+            4,
+            None,
+            &done,
+            |index, results| finished.push((index, results.len())),
+        );
+
+        assert_eq!(built, vec![2, 3]);
+        assert_eq!(finished, vec![(2, 1), (3, 1)]);
+        // stored outcomes first, in replicate order, then the live ones
+        assert_eq!(outcomes[0][0..2], [false, true]);
+        assert_eq!(outcomes[0].len(), 4);
+    }
+
+    #[test]
+    fn on_finished_is_not_called_for_the_replicate_zero_results_passed_in() {
+        let stream = Stream {
+            items: vec![StreamItem::Question(question_asked_by("q1", "pm"))],
+        };
+        let first = vec![QuestionResult {
+            question_id: "q1".to_string(),
+            retrieved_ids: vec![],
+            recall_at_k: 1.0,
+            tokens_injected: 0,
+            scored_candidates: vec![],
+            gap_disclosure: None,
+        }];
+        let mut finished = Vec::new();
+        replay_stream_replicated_with(
+            &stream,
+            |_| Box::new(SeenSoFar { seen: Vec::new() }),
+            10,
+            3,
+            Some(&first),
+            &std::collections::BTreeMap::new(),
+            |index, _| finished.push(index),
+        );
+        assert_eq!(finished, vec![1, 2]);
     }
 
     #[test]

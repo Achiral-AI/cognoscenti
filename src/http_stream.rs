@@ -101,6 +101,35 @@ pub(crate) fn run_json_post(
     extra_headers: &[(&str, String)],
     payload: &Value,
 ) -> Result<Value> {
+    let raw = post_raw(url, api_key, extra_headers, payload)?;
+    if !raw.curl_ok {
+        return Err(anyhow::anyhow!(
+            "stream adapter request failed: {}",
+            raw.curl_stderr
+        ));
+    }
+    serde_json::from_str(&raw.body)
+        .with_context(|| format!("stream adapter returned non-JSON response: {}", raw.body))
+}
+
+/// What one curl POST returned, before anything decides whether it is an
+/// error. `status` is 0 when curl never got an HTTP response.
+pub(crate) struct RawResponse {
+    pub curl_ok: bool,
+    pub curl_exit: Option<i32>,
+    pub curl_stderr: String,
+    pub status: u16,
+    pub body: String,
+}
+
+/// Like `run_json_post`'s transport, but keeps the HTTP status and does not
+/// parse the body, so a caller can tell a gateway error from a real answer.
+pub(crate) fn post_raw(
+    url: &str,
+    api_key: Option<&str>,
+    extra_headers: &[(&str, String)],
+    payload: &Value,
+) -> Result<RawResponse> {
     let mut command = Command::new("curl");
     command
         .arg("-sS")
@@ -120,25 +149,33 @@ pub(crate) fn run_json_post(
     }
 
     let output = command
+        .arg("-w")
+        .arg(STATUS_MARKER)
         .arg("-d")
         .arg(payload.to_string())
         .arg(url)
         .output()
         .with_context(|| "failed to run curl for stream adapter request")?;
 
-    if !output.status.success() {
-        return Err(anyhow::anyhow!(
-            "stream adapter request failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    serde_json::from_slice(&output.stdout).with_context(|| {
-        format!(
-            "stream adapter returned non-JSON response: {}",
-            String::from_utf8_lossy(&output.stdout)
-        )
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let (body, status) = split_status(&stdout);
+    Ok(RawResponse {
+        curl_ok: output.status.success(),
+        curl_exit: output.status.code(),
+        curl_stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        status,
+        body,
     })
+}
+
+const STATUS_MARKER: &str = "\n%{http_code}";
+
+/// Splits curl's `-w` suffix (a newline, then the status) off the body.
+fn split_status(stdout: &str) -> (String, u16) {
+    match stdout.rsplit_once('\n') {
+        Some((body, code)) => (body.to_string(), code.trim().parse().unwrap_or(0)),
+        None => (stdout.to_string(), 0),
+    }
 }
 
 impl MemorySystem for HttpStreamSystem {
@@ -270,5 +307,17 @@ mod tests {
             parse_retrieve_response(&json!({})),
             Vec::<(String, f64)>::new()
         );
+    }
+
+    #[test]
+    fn the_status_suffix_is_split_off_the_body() {
+        assert_eq!(
+            split_status("{\"a\":1}\n200"),
+            ("{\"a\":1}".to_string(), 200)
+        );
+        // a multi-line body keeps its inner newlines
+        assert_eq!(split_status("a\nb\n502"), ("a\nb".to_string(), 502));
+        assert_eq!(split_status("\n000"), (String::new(), 0));
+        assert_eq!(split_status("no suffix"), ("no suffix".to_string(), 0));
     }
 }

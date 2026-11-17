@@ -303,6 +303,51 @@ cargo run --release -- --generate-stream datasets/generated/trust-seed-0-natural
 
 The header line of a variant file records `profile=natural-names`.
 
+### Surviving a restart of the system under test
+
+Against a live system, a deployment restart makes every request fail for a
+minute or two. The `achiral` adapter retries instead of stopping the run.
+
+A request is retried when curl cannot reach the server (exit 6, 7, 28, 35, 52,
+55 or 56), the status is 502, 503 or 504, or the body is not JSON on any other
+non-4xx status. The wait before retry *n* is `min(cap, base * 2^(n-1))`, then
+drawn uniformly from its upper half so replicates do not retry in step. Each
+retry prints one line to stderr: the reason, the attempt and the delay.
+A JSON error body such as `{"error": {...}}` and any 4xx are the API's real
+answer and stop the run at once, as before. Once the retries are used up the
+run stops with an error; a failed request is never scored.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `COGNOSCENTI_ACHIRAL_MAX_RETRIES` | 8 | Retries after the first try, 0 to 10. Anything else is an error. |
+| `COGNOSCENTI_ACHIRAL_RETRY_BASE_MS` | 500 | First delay before jitter. At least 1. |
+| `COGNOSCENTI_ACHIRAL_RETRY_CAP_MS` | 30000 | Longest delay before jitter. Not below the base. |
+
+With the defaults the delays before jitter are 0.5, 1, 2, 4, 8, 16, 30 and
+30 seconds, about 92 seconds in all (46 to 92 with jitter).
+
+A retried write cannot add a second memory. Every write sends
+`Idempotency-Key: cognoscenti-<event id>`, and achiral.ai dedupes org events on
+the event id and agent `remember` on that key.
+
+`--replicate-log <path>` appends a record when each replicate starts and when it
+finishes (its per-question outcomes, and a short hash of its API key, never the
+key). Each finished replicate also prints one line, so the output file keeps
+every completed replicate even if the run dies:
+
+```
+[replicate 2] mean recall@3 = 0.5331; questions fully recalled: 290/544; trials with a leak: 0/141
+```
+
+An existing non-empty log is refused unless `--resume` is given. `--resume`
+skips the replicates the log shows finished and runs the rest. It refuses to run
+a replicate whose API key the log has already seen: the org a crash interrupted
+holds part of the stream and the recall history of the questions asked so far,
+so it is not a fresh run. Provision a new org and put its key at that
+replicate's index in `COGNOSCENTI_ACHIRAL_API_KEYS`. A log from another stream,
+seed, `--top-k` or system is refused. When replicate 0 is already in the log,
+the preliminary report is not printed again; it is in the earlier output.
+
 ### Skipping user-scope trials
 
 `--skip-user-scope` drops every generated trial that holds a user-scope event and

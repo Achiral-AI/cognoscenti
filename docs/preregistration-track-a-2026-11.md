@@ -236,4 +236,16 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    cohort set, announced as its own deviation before it runs. Local baselines were run on the
    variant first: `bm25` recall@3 on the 543 kept questions is 0.694 (0.870 on the registered
    subset), so the gap to a lexical baseline narrows by design.
-
+9. **Retry on transient failures, a per-replicate log and `--resume`, 2026-11-17.** Both
+   cohorts died on 2026-11-17 (s0 at 19:10Z "connection refused", s02 at 19:17Z HTTP 502)
+   because the dev API containers were recreated; the replay panicked on the first failed
+   request and lost replicates 1 to 4 (replicate 0 had finished with no leaks). The adapter now
+   retries connection errors, HTTP 502/503/504 and non-JSON error pages up to 8 times with
+   capped exponential backoff and jitter (0.5 s base, 30 s cap, upper-half jitter, about 92 s
+   in all before jitter), then stops with an error; real API error bodies and 4xx still stop at
+   once, and a failed request is never scored. Writes are retried because they carry an
+   `Idempotency-Key` and achiral.ai dedupes on it, so a retry cannot duplicate an event. This
+   changes no query, dataset, metric or scoring rule. Each replicate now prints a summary line
+   and is appended to a log as it ends. The crashed runs' data is not reused: the cohorts
+   restart on freshly provisioned orgs, and `--resume` refuses any org the log has already
+   started. Replicates from the crashed runs are discarded, not merged.

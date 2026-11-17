@@ -36,7 +36,7 @@
 //! retrieval is time-travel-safe so far.
 
 use crate::adapter::MemorySystem;
-use crate::http_stream::run_json_post as post_json;
+use crate::http_stream::{post_raw, RawResponse};
 use crate::stream::{Actor, ActorKind, Scope, ScopeKind, StreamEvent};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -65,6 +65,7 @@ pub struct AchiralHttpSystem {
     /// `settle_ms` is also a blind sleep before every question with nothing
     /// to poll for. Defaults to `settle_ms`.
     confirm_ms: u64,
+    retry: RetryPolicy,
     /// Org-scope events ingested since the last successful settle(),
     /// identified by the `businessEventId` achiral.ai's own ingest
     /// response returns - what settle() polls achiral.ai to confirm.
@@ -234,9 +235,23 @@ impl AchiralHttpSystem {
             settle_ms,
             confirm_ms,
             unconfirmed_business_event_ids: Vec::new(),
+            retry: RetryPolicy::from_env()?,
             user_member_ids,
         })
     }
+}
+
+/// A short id of the key replicate `index` will use, for the replicate log
+/// (never the key itself). `None` when no key is configured for it.
+pub fn api_key_id_for_replicate(index: usize) -> Result<Option<String>> {
+    let key = resolve_api_key_for_replicate(
+        std::env::var("COGNOSCENTI_ACHIRAL_API_KEYS")
+            .ok()
+            .as_deref(),
+        std::env::var("COGNOSCENTI_ACHIRAL_API_KEY").ok().as_deref(),
+        index,
+    )?;
+    Ok(key.map(|k| crate::replicate_log::key_id(&k)))
 }
 
 /// `metadata` sent at ingest time on every scope, carrying the original
@@ -537,13 +552,214 @@ fn reject_api_error(response: Value) -> Result<Value> {
     Ok(response)
 }
 
+/// How hard a request that failed in transit is retried. A deployment
+/// restart (the dev API containers were recreated mid-run, 2026-11-17) makes
+/// every request fail for a minute or two; without a retry that killed ten
+/// hours of replicates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RetryPolicy {
+    pub max_retries: u32,
+    pub base_ms: u64,
+    pub cap_ms: u64,
+}
+
+const MAX_RETRIES_LIMIT: u32 = 10;
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        // 8 retries at 0.5s doubling to a 30s cap wait about 2 minutes in all,
+        // enough to ride out a container recreate.
+        RetryPolicy {
+            max_retries: 8,
+            base_ms: 500,
+            cap_ms: 30_000,
+        }
+    }
+}
+
+impl RetryPolicy {
+    /// From `COGNOSCENTI_ACHIRAL_MAX_RETRIES` (0..=10),
+    /// `COGNOSCENTI_ACHIRAL_RETRY_BASE_MS` and `COGNOSCENTI_ACHIRAL_RETRY_CAP_MS`.
+    /// A bad value is an error, not a silent default: a typo must not turn
+    /// retries off in the middle of a long run.
+    pub fn from_env_values(
+        max_retries: Option<&str>,
+        base_ms: Option<&str>,
+        cap_ms: Option<&str>,
+    ) -> Result<Self> {
+        let default = RetryPolicy::default();
+        let parse = |name: &str, value: Option<&str>, default: u64| -> Result<u64> {
+            match value {
+                None => Ok(default),
+                Some(text) => text
+                    .trim()
+                    .parse::<u64>()
+                    .with_context(|| format!("{name} must be a whole number, got {text:?}")),
+            }
+        };
+        let max = parse(
+            "COGNOSCENTI_ACHIRAL_MAX_RETRIES",
+            max_retries,
+            default.max_retries as u64,
+        )?;
+        if max > MAX_RETRIES_LIMIT as u64 {
+            anyhow::bail!(
+                "COGNOSCENTI_ACHIRAL_MAX_RETRIES must be 0..={MAX_RETRIES_LIMIT}, got {max}"
+            );
+        }
+        let base = parse(
+            "COGNOSCENTI_ACHIRAL_RETRY_BASE_MS",
+            base_ms,
+            default.base_ms,
+        )?;
+        let cap = parse("COGNOSCENTI_ACHIRAL_RETRY_CAP_MS", cap_ms, default.cap_ms)?;
+        if base == 0 {
+            anyhow::bail!("COGNOSCENTI_ACHIRAL_RETRY_BASE_MS must be at least 1");
+        }
+        if cap < base {
+            anyhow::bail!(
+                "COGNOSCENTI_ACHIRAL_RETRY_CAP_MS ({cap}) must not be below the base ({base})"
+            );
+        }
+        Ok(RetryPolicy {
+            max_retries: max as u32,
+            base_ms: base,
+            cap_ms: cap,
+        })
+    }
+
+    fn from_env() -> Result<Self> {
+        Self::from_env_values(
+            std::env::var("COGNOSCENTI_ACHIRAL_MAX_RETRIES")
+                .ok()
+                .as_deref(),
+            std::env::var("COGNOSCENTI_ACHIRAL_RETRY_BASE_MS")
+                .ok()
+                .as_deref(),
+            std::env::var("COGNOSCENTI_ACHIRAL_RETRY_CAP_MS")
+                .ok()
+                .as_deref(),
+        )
+    }
+}
+
+/// The wait before retry number `retry` (0-based): the base doubled per
+/// retry, capped, then jittered into its upper half (`unit` in 0..=1) so
+/// replicates restarting together do not hit the API in step.
+fn backoff_ms(policy: &RetryPolicy, retry: u32, unit: f64) -> u64 {
+    let doubled = policy
+        .base_ms
+        .checked_shl(retry.min(40))
+        .unwrap_or(u64::MAX);
+    let ceiling = doubled.min(policy.cap_ms);
+    let floor = ceiling / 2;
+    floor + ((ceiling - floor) as f64 * unit.clamp(0.0, 1.0)).round() as u64
+}
+
+/// curl exits that mean the network or the server was unreachable for now:
+/// could not resolve host/proxy, could not connect, timed out, SSL connect,
+/// empty reply, send/recv failure.
+const TRANSIENT_CURL_EXITS: [i32; 7] = [6, 7, 28, 35, 52, 55, 56];
+
+enum Attempt {
+    Done(Value),
+    Retry(String),
+    Fail(anyhow::Error),
+}
+
+/// Decides what one response means. A gateway error, a connection failure and
+/// an HTML error page say nothing about the request, so they are retried. A
+/// JSON error body is the API's real answer and stops the run at once.
+fn classify(raw: &RawResponse) -> Attempt {
+    if !raw.curl_ok {
+        let reason = format!(
+            "curl exit {}: {}",
+            raw.curl_exit.map_or("?".to_string(), |c| c.to_string()),
+            raw.curl_stderr.trim()
+        );
+        return if raw
+            .curl_exit
+            .is_some_and(|c| TRANSIENT_CURL_EXITS.contains(&c))
+        {
+            Attempt::Retry(reason)
+        } else {
+            Attempt::Fail(anyhow::anyhow!("achiral request failed: {reason}"))
+        };
+    }
+    if matches!(raw.status, 502..=504) {
+        return Attempt::Retry(format!("HTTP {}", raw.status));
+    }
+    match serde_json::from_str::<Value>(&raw.body) {
+        Ok(value) => match reject_api_error(value) {
+            Ok(value) => Attempt::Done(value),
+            Err(err) => Attempt::Fail(err),
+        },
+        Err(_) if (400..500).contains(&raw.status) => Attempt::Fail(anyhow::anyhow!(
+            "achiral returned HTTP {} with a non-JSON body: {}",
+            raw.status,
+            raw.body.chars().take(200).collect::<String>()
+        )),
+        Err(_) => Attempt::Retry(format!("HTTP {} with a non-JSON body", raw.status)),
+    }
+}
+
+fn retry_log_line(retry: u32, max_retries: u32, delay_ms: u64, reason: &str) -> String {
+    format!("achiral request failed ({reason}); retry {retry}/{max_retries} in {delay_ms}ms")
+}
+
+/// Runs `op` until it finishes, retrying transient failures with backoff. The
+/// sleep and jitter are passed in so the loop is testable without waiting.
+fn retry_loop(
+    policy: &RetryPolicy,
+    mut op: impl FnMut() -> Result<RawResponse>,
+    mut sleep: impl FnMut(u64),
+    mut jitter: impl FnMut() -> f64,
+) -> Result<Value> {
+    let mut retries = 0u32;
+    loop {
+        match classify(&op()?) {
+            Attempt::Done(value) => return Ok(value),
+            Attempt::Fail(err) => return Err(err),
+            Attempt::Retry(reason) => {
+                if retries >= policy.max_retries {
+                    anyhow::bail!(
+                        "achiral request still failing after {} retries: {reason}",
+                        policy.max_retries
+                    );
+                }
+                let delay = backoff_ms(policy, retries, jitter());
+                retries += 1;
+                eprintln!(
+                    "{}",
+                    retry_log_line(retries, policy.max_retries, delay, &reason)
+                );
+                sleep(delay);
+            }
+        }
+    }
+}
+
+/// Writes are retried only because achiral.ai dedupes them: org events on
+/// the idempotency key built from `payload.id` (the event id), agent
+/// `remember` on the `Idempotency-Key` header. So a retry after a lost
+/// response cannot create a second memory.
+fn ingest_headers(event: &StreamEvent) -> Vec<(&'static str, String)> {
+    vec![("Idempotency-Key", format!("cognoscenti-{}", event.id))]
+}
+
 fn run_json_post(
+    policy: &RetryPolicy,
     url: &str,
     api_key: Option<&str>,
     extra_headers: &[(&str, String)],
     payload: &Value,
 ) -> Result<Value> {
-    post_json(url, api_key, extra_headers, payload).and_then(reject_api_error)
+    retry_loop(
+        policy,
+        || post_raw(url, api_key, extra_headers, payload),
+        |ms| std::thread::sleep(std::time::Duration::from_millis(ms)),
+        rand::random::<f64>,
+    )
 }
 
 impl MemorySystem for AchiralHttpSystem {
@@ -568,8 +784,14 @@ impl MemorySystem for AchiralHttpSystem {
             ScopeKind::Agent => ingest_agent_payload(event),
             ScopeKind::Org | ScopeKind::User => ingest_event_payload(event),
         };
-        let response = run_json_post(&url, self.api_key.as_deref(), &[], &payload)
-            .unwrap_or_else(|err| panic!("achiral ingest failed: {err:#}"));
+        let response = run_json_post(
+            &self.retry,
+            &url,
+            self.api_key.as_deref(),
+            &ingest_headers(event),
+            &payload,
+        )
+        .unwrap_or_else(|err| panic!("achiral ingest failed: {err:#}"));
         // Agent-scope `remember` is already synchronous (no triage lag) -
         // only an org/user-scope event has a businessEventId to track.
         if matches!(event.scope.kind, ScopeKind::Org | ScopeKind::User) {
@@ -613,9 +835,10 @@ impl MemorySystem for AchiralHttpSystem {
         let ids = std::mem::take(&mut self.unconfirmed_business_event_ids);
         let url = format!("{}/v1/memory/events/status", self.base_url);
         let api_key = self.api_key.clone();
+        let retry = self.retry;
         let still_unconfirmed = poll_until_confirmed(ids, self.confirm_ms, 250, |remaining| {
             let payload = event_status_payload(remaining);
-            let response = match run_json_post(&url, api_key.as_deref(), &[], &payload) {
+            let response = match run_json_post(&retry, &url, api_key.as_deref(), &[], &payload) {
                 Ok(response) => response,
                 // A transient status-check failure shouldn't panic the whole
                 // replay - treat it as "still unconfirmed" and let the
@@ -645,8 +868,14 @@ impl MemorySystem for AchiralHttpSystem {
         let url = retrieve_url(&self.base_url, actor);
         let payload = retrieve_payload(query, top_k);
         let headers = [eval_now_header(now)];
-        let response = run_json_post(&url, self.api_key.as_deref(), &headers, &payload)
-            .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
+        let response = run_json_post(
+            &self.retry,
+            &url,
+            self.api_key.as_deref(),
+            &headers,
+            &payload,
+        )
+        .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
         parse_recall_response(&response)
             .into_iter()
             .take(top_k)
@@ -663,8 +892,14 @@ impl MemorySystem for AchiralHttpSystem {
         let url = retrieve_url(&self.base_url, actor);
         let payload = evidence_graph_payload(query, top_k);
         let headers = [eval_now_header(now)];
-        let response = run_json_post(&url, self.api_key.as_deref(), &headers, &payload)
-            .unwrap_or_else(|err| panic!("achiral evidence graph retrieve failed: {err:#}"));
+        let response = run_json_post(
+            &self.retry,
+            &url,
+            self.api_key.as_deref(),
+            &headers,
+            &payload,
+        )
+        .unwrap_or_else(|err| panic!("achiral evidence graph retrieve failed: {err:#}"));
         parse_unresolved_gap_display_names(&response)
     }
 }
@@ -1216,6 +1451,7 @@ mod tests {
             settle_ms: 30,
             confirm_ms: 30,
             unconfirmed_business_event_ids: Vec::new(),
+            retry: RetryPolicy::default(),
             user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
@@ -1234,6 +1470,7 @@ mod tests {
             settle_ms: 0,
             confirm_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
+            retry: RetryPolicy::default(),
             user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
@@ -1252,6 +1489,7 @@ mod tests {
             settle_ms: 0,
             confirm_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
+            retry: RetryPolicy::default(),
             user_member_ids: HashMap::new(),
         };
         assert!(system.capabilities().settle);
@@ -1268,6 +1506,285 @@ mod tests {
                 }
             ),
             "http://unused/v1/memory/agents/scout/retrieve"
+        );
+    }
+
+    // --- retry with backoff -------------------------------------------------
+
+    fn raw(curl_exit: i32, status: u16, body: &str) -> crate::http_stream::RawResponse {
+        crate::http_stream::RawResponse {
+            curl_ok: curl_exit == 0,
+            curl_exit: Some(curl_exit),
+            curl_stderr: if curl_exit == 0 {
+                String::new()
+            } else {
+                "curl: (7) Failed to connect".to_string()
+            },
+            status,
+            body: body.to_string(),
+        }
+    }
+
+    fn policy(max_retries: u32) -> RetryPolicy {
+        RetryPolicy {
+            max_retries,
+            base_ms: 100,
+            cap_ms: 1000,
+        }
+    }
+
+    #[test]
+    fn the_retry_policy_defaults_to_eight_retries_half_a_second_base_and_a_thirty_second_cap() {
+        let p = RetryPolicy::from_env_values(None, None, None).unwrap();
+        assert_eq!((p.max_retries, p.base_ms, p.cap_ms), (8, 500, 30_000));
+    }
+
+    #[test]
+    fn the_retry_policy_reads_each_value_and_accepts_zero_to_ten_retries() {
+        let p = RetryPolicy::from_env_values(Some("10"), Some("250"), Some("4000")).unwrap();
+        assert_eq!((p.max_retries, p.base_ms, p.cap_ms), (10, 250, 4000));
+        assert_eq!(
+            RetryPolicy::from_env_values(Some("0"), None, None)
+                .unwrap()
+                .max_retries,
+            0
+        );
+    }
+
+    #[test]
+    fn the_retry_policy_rejects_out_of_range_or_unparseable_values() {
+        assert!(RetryPolicy::from_env_values(Some("11"), None, None).is_err());
+        assert!(RetryPolicy::from_env_values(Some("-1"), None, None).is_err());
+        assert!(RetryPolicy::from_env_values(Some("many"), None, None).is_err());
+        assert!(RetryPolicy::from_env_values(None, Some("soon"), None).is_err());
+        assert!(RetryPolicy::from_env_values(None, Some("0"), None).is_err());
+        // a cap below the base would make every delay the cap
+        assert!(RetryPolicy::from_env_values(None, Some("500"), Some("100")).is_err());
+    }
+
+    #[test]
+    fn backoff_doubles_each_retry_up_to_the_cap() {
+        let p = policy(8);
+        // unit 1.0 is the top of the jitter range
+        assert_eq!(backoff_ms(&p, 0, 1.0), 100);
+        assert_eq!(backoff_ms(&p, 1, 1.0), 200);
+        assert_eq!(backoff_ms(&p, 2, 1.0), 400);
+        assert_eq!(backoff_ms(&p, 3, 1.0), 800);
+        assert_eq!(backoff_ms(&p, 4, 1.0), 1000);
+        assert_eq!(backoff_ms(&p, 9, 1.0), 1000);
+    }
+
+    #[test]
+    fn backoff_jitter_spans_half_to_all_of_the_delay() {
+        let p = policy(8);
+        assert_eq!(backoff_ms(&p, 2, 0.0), 200);
+        assert_eq!(backoff_ms(&p, 2, 0.5), 300);
+        assert_eq!(backoff_ms(&p, 2, 1.0), 400);
+    }
+
+    #[test]
+    fn backoff_does_not_overflow_on_a_huge_attempt_number() {
+        assert_eq!(backoff_ms(&policy(8), 4_000_000, 1.0), 1000);
+    }
+
+    #[test]
+    fn a_json_200_is_a_finished_response() {
+        match classify(&raw(0, 200, r#"{"data":[]}"#)) {
+            Attempt::Done(v) => assert_eq!(v["data"], json!([])),
+            _ => panic!("expected Done"),
+        }
+    }
+
+    #[test]
+    fn refused_connections_and_timeouts_are_retried() {
+        for exit in [6, 7, 28, 35, 52, 55, 56] {
+            assert!(
+                matches!(classify(&raw(exit, 0, "")), Attempt::Retry(_)),
+                "curl exit {exit}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_malformed_url_is_not_retried() {
+        assert!(matches!(classify(&raw(3, 0, "")), Attempt::Fail(_)));
+    }
+
+    #[test]
+    fn gateway_statuses_are_retried_even_with_a_json_body() {
+        for status in [502, 503, 504] {
+            assert!(matches!(
+                classify(&raw(0, status, "<html>Bad Gateway</html>")),
+                Attempt::Retry(_)
+            ));
+            assert!(matches!(
+                classify(&raw(0, status, r#"{"error":{"code":"x"}}"#)),
+                Attempt::Retry(_)
+            ));
+        }
+    }
+
+    #[test]
+    fn an_html_page_on_a_success_status_is_retried() {
+        assert!(matches!(
+            classify(&raw(0, 200, "<html>maintenance</html>")),
+            Attempt::Retry(_)
+        ));
+        assert!(matches!(
+            classify(&raw(0, 500, "<html>oops</html>")),
+            Attempt::Retry(_)
+        ));
+    }
+
+    #[test]
+    fn a_real_api_error_body_is_never_retried() {
+        let body = r#"{"error":{"code":"user_scope_unavailable","message":"no"}}"#;
+        for status in [400, 403, 404, 500] {
+            match classify(&raw(0, status, body)) {
+                Attempt::Fail(err) => assert!(err.to_string().contains("user_scope_unavailable")),
+                _ => panic!("status {status} must fail immediately"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_client_error_with_a_non_json_body_is_not_retried() {
+        assert!(matches!(
+            classify(&raw(0, 401, "Unauthorized")),
+            Attempt::Fail(_)
+        ));
+    }
+
+    #[test]
+    fn retry_loop_returns_the_first_success_without_sleeping() {
+        let mut sleeps = Vec::new();
+        let value = retry_loop(
+            &policy(8),
+            || Ok(raw(0, 200, r#"{"ok":true}"#)),
+            |ms| sleeps.push(ms),
+            || 1.0,
+        )
+        .unwrap();
+        assert_eq!(value["ok"], true);
+        assert!(sleeps.is_empty());
+    }
+
+    #[test]
+    fn retry_loop_sleeps_with_growing_delays_then_succeeds() {
+        let mut calls = 0;
+        let mut sleeps = Vec::new();
+        let value = retry_loop(
+            &policy(8),
+            || {
+                calls += 1;
+                Ok(if calls < 4 {
+                    raw(7, 0, "")
+                } else {
+                    raw(0, 200, r#"{"ok":true}"#)
+                })
+            },
+            |ms| sleeps.push(ms),
+            || 1.0,
+        )
+        .unwrap();
+        assert_eq!(value["ok"], true);
+        assert_eq!(calls, 4);
+        assert_eq!(sleeps, vec![100, 200, 400]);
+    }
+
+    #[test]
+    fn retry_loop_stops_with_a_clear_error_once_retries_are_exhausted() {
+        let mut calls = 0;
+        let mut sleeps = Vec::new();
+        let err = retry_loop(
+            &policy(3),
+            || {
+                calls += 1;
+                Ok(raw(0, 502, "<html>Bad Gateway</html>"))
+            },
+            |ms| sleeps.push(ms),
+            || 1.0,
+        )
+        .unwrap_err();
+        assert_eq!(calls, 4, "one try plus three retries");
+        assert_eq!(sleeps.len(), 3);
+        let message = err.to_string();
+        assert!(message.contains("after 3 retries"), "{message}");
+        assert!(message.contains("502"), "{message}");
+    }
+
+    #[test]
+    fn retry_loop_with_zero_retries_tries_once_and_fails() {
+        let mut calls = 0;
+        let err = retry_loop(
+            &policy(0),
+            || {
+                calls += 1;
+                Ok(raw(7, 0, ""))
+            },
+            |_| panic!("must not sleep"),
+            || 1.0,
+        )
+        .unwrap_err();
+        assert_eq!(calls, 1);
+        assert!(err.to_string().contains("after 0 retries"));
+    }
+
+    #[test]
+    fn retry_loop_does_not_retry_a_real_api_error() {
+        let mut calls = 0;
+        let err = retry_loop(
+            &policy(8),
+            || {
+                calls += 1;
+                Ok(raw(
+                    0,
+                    403,
+                    r#"{"error":{"code":"forbidden","message":"x"}}"#,
+                ))
+            },
+            |_| panic!("must not sleep"),
+            || 1.0,
+        )
+        .unwrap_err();
+        assert_eq!(calls, 1);
+        assert!(err.to_string().contains("forbidden"));
+    }
+
+    #[test]
+    fn retry_loop_does_not_retry_when_curl_itself_cannot_be_run() {
+        let mut calls = 0;
+        let err = retry_loop(
+            &policy(8),
+            || {
+                calls += 1;
+                Err(anyhow::anyhow!("no curl"))
+            },
+            |_| panic!("must not sleep"),
+            || 1.0,
+        )
+        .unwrap_err();
+        assert_eq!(calls, 1);
+        assert!(err.to_string().contains("no curl"));
+    }
+
+    #[test]
+    fn a_retry_log_line_names_the_attempt_and_the_delay() {
+        let line = retry_log_line(2, 8, 400, "HTTP 502");
+        assert!(line.contains("retry 2/8"), "{line}");
+        assert!(line.contains("400ms"), "{line}");
+        assert!(line.contains("HTTP 502"), "{line}");
+    }
+
+    // A retried write must not duplicate an event: achiral.ai dedupes ingest
+    // on the idempotency key, so every write carries one derived from the
+    // stream event id.
+    #[test]
+    fn every_write_carries_an_idempotency_key_from_the_event_id() {
+        let headers = ingest_headers(&org_event());
+        assert_eq!(
+            headers,
+            vec![("Idempotency-Key", "cognoscenti-e1".to_string())]
         );
     }
 }

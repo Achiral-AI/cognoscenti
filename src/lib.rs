@@ -10,6 +10,7 @@ pub mod generator;
 pub mod http_stream;
 pub mod lint;
 pub mod manifest;
+pub mod replicate_log;
 pub mod runner;
 pub mod scoring;
 pub mod stability;
