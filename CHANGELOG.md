@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `--results-json` writes a replay's numbers as JSON, and `cognoscenti report` turns one or more
   of those files (one per labelled cohort) into a self-contained HTML page with `results.json`
-  and `results.csv` beside it. Inline SVG, grayscale, light and dark, phone width.
+  and `results.csv` beside it. Inline SVG in colour that carries meaning (a hue per Achiral
+  cohort, quieter hues per baseline, green ahead, orange-red behind, red leak, grey hatch for
+  a small n), a one-line result above each chart, light and dark, phone width.
 - The `achiral` adapter retries transient failures (connection errors, HTTP 502/503/504,
   non-JSON error pages) with capped exponential backoff and jitter, default 8 retries,
   configurable with `COGNOSCENTI_ACHIRAL_MAX_RETRIES` (0 to 10),

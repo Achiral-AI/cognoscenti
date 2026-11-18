@@ -372,10 +372,22 @@ cargo run --release -- report --results results/run/baselines.results.json \
 
 It writes `index.html`, `results.json` and `results.csv` into `report/` beside
 the first results file, or into `--out <dir>`. The page is self-contained:
-inline SVG, no script, font or link, the grayscale palette of
-`pilot/docs/design/STANDARDS.md`, light and dark, and no horizontal scroll at
-phone width. The JSON and CSV hold every plotted number, so a chart can be
+inline SVG, no script, font or link, light and dark, and no horizontal scroll at
+phone width. Colour carries meaning (the Achiral design standard's grayscale
+does not apply to reports): see below. The JSON and CSV hold every plotted number, so a chart can be
 redrawn from data.
+
+Colour. Each Achiral cohort gets one saturated hue (blue, gold, magenta, indigo
+in turn), kept in every chart. Each local baseline gets a quieter hue of its
+own. Ahead is green with a ▲, behind is orange-red with a ▼, no clear gap is
+grey with a ●, a leak above zero is red and labelled LEAK, and a category under
+10 questions is a grey hatch. Every series also has its own marker shape and is
+named in a legend, so colour is never the only cue. The palette is the colour-
+vision-safe set tested in `src/report.rs`: every graphic colour keeps 3:1
+against the card in light and dark, and the cohort hues stay apart under
+protan, deutan and tritan simulation. Each chart opens with one line stating
+the result with its n (for example the recall gap to the best baseline and its
+CI); losses are drawn as large as wins.
 
 Sections: run manifest and limits; recall by category for every system, with
 a table of questions each baseline won; flip rate; calibration; tokens by
