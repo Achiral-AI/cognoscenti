@@ -249,3 +249,12 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    and is appended to a log as it ends. The crashed runs' data is not reused: the cohorts
    restart on freshly provisioned orgs, and `--resume` refuses any org the log has already
    started. Replicates from the crashed runs are discarded, not merged.
+
+10. **HTML report from machine-readable results, 2026-11-18.** The replay output was text only,
+   so a replay can now write `--results-json` and `cognoscenti report` draws it. The report
+   states the per-question counts and 95% CIs the printed report states, from the same
+   `stats.rs` calls and seed, and adds no metric, dataset or scoring rule. A category of fewer
+   than 10 questions is shown as "n too small" without an interval. The runs already finished
+   before this change (the crashed cohorts) printed text only and have no results file; the
+   report reads files written from now on.
+

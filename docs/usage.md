@@ -348,6 +348,57 @@ replicate's index in `COGNOSCENTI_ACHIRAL_API_KEYS`. A log from another stream,
 seed, `--top-k` or system is refused. When replicate 0 is already in the log,
 the preliminary report is not printed again; it is in the earlier output.
 
+### Reports
+
+`--results-json <path>` makes a replay write its numbers as JSON: one file per
+run, one cohort, named by `--label`. It holds each system's per-question recall
+and tokens, recall by category, leak rates, the flip rate across replicates,
+derived calibration (Brier, ECE with its CI, reliability bins), tokens by
+cycle, and one summary row per replicate, plus the run info (dataset file
+name and SHA-256, seed, top-k, replicate count, commit, trials not run, limits).
+Every interval comes from `src/stats.rs` with the run's seed, the same calls the
+printed report uses. The file name is kept, never the path, and no key or
+endpoint is stored.
+
+`cognoscenti report` draws those files as one page:
+
+```bash
+cargo run --release -- --replay-stream datasets/generated/trust-seed-0/stream.jsonl \
+  --systems verbatim,bm25,recency,full-context,bounded-window --replicates 3 \
+  --skip-user-scope --label baselines --results-json results/run/baselines.results.json
+cargo run --release -- report --results results/run/baselines.results.json \
+  results/run/noise0.results.json results/run/noise02.results.json
+```
+
+It writes `index.html`, `results.json` and `results.csv` into `report/` beside
+the first results file, or into `--out <dir>`. The page is self-contained:
+inline SVG, no script, font or link, the grayscale palette of
+`pilot/docs/design/STANDARDS.md`, light and dark, and no horizontal scroll at
+phone width. The JSON and CSV hold every plotted number, so a chart can be
+redrawn from data.
+
+Sections: run manifest and limits; recall by category for every system, with
+a table of questions each baseline won; flip rate; calibration; tokens by
+cycle (from a `--cycles` run); leaks with the 3/n bound; a metric against a
+setting; the replicates. Rate axes start at zero. A category under 10 questions
+shows "n too small" and no point.
+
+Each results file is its own cohort. Two files with the same label are
+refused: cohorts are never merged. A baseline run is a cohort too, so label it
+(`--label baselines`); its rows sit beside the Achiral cohort's on the same
+chart. The head-to-head table compares two cohorts only when they ran the same
+dataset (same SHA-256), on the questions both ran.
+
+The settings charts are built from labels alone. A label is read as
+space- or comma-separated `key=value` words. Cohorts whose labels differ in one
+key and agree on every other form a group: a numeric key
+(`activationNoiseScale=0`, `=0.2`) draws Achiral's overall recall against that
+key, and a text key (`mode=aggr`, `mode=rerank`) draws one row per value.
+
+The report refuses to write if its text holds `http`, `://`, `acm_`, `Bearer`,
+`localhost`, an adapter env-variable name, or the value of
+`COGNOSCENTI_ACHIRAL_API_KEY(S)` or `_BASE_URL`.
+
 ### Skipping user-scope trials
 
 `--skip-user-scope` drops every generated trial that holds a user-scope event and

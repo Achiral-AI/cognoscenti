@@ -91,6 +91,12 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub label: Option<String>,
 
+    /// Write this replay's results as JSON (`cognoscenti report` reads it).
+    /// The file holds one cohort, named by `--label`. Only used with
+    /// `--replay-stream`.
+    #[clap(long)]
+    pub results_json: Option<std::path::PathBuf>,
+
     /// Append one record per replicate start and finish to this file, so a
     /// crash loses at most the replicate in flight. Needs `--replicates` > 1.
     /// An existing non-empty file is refused unless `--resume` is given.

@@ -67,7 +67,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// The Cognoscenti commit a run was built from, when run inside a git
 /// checkout. `None` outside one (e.g. a packaged release) rather than a
 /// placeholder SHA.
-fn current_commit() -> Option<String> {
+pub fn current_commit() -> Option<String> {
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
         .output()

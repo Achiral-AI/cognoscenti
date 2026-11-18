@@ -7,6 +7,23 @@ use cognoscenti::manifest::sha256_file;
 use cognoscenti::runner::{BenchmarkConfig, BenchmarkRunner};
 
 fn main() -> Result<()> {
+    // `report` has its own arguments, so it is picked off before the flat
+    // benchmark flags are parsed.
+    if std::env::args().nth(1).as_deref() == Some("report") {
+        let args = cognoscenti::report::ReportArgs::parse_from(
+            std::env::args().skip(1).enumerate().map(|(i, a)| {
+                if i == 0 {
+                    "cognoscenti report".to_string()
+                } else {
+                    a
+                }
+            }),
+        );
+        let index = cognoscenti::report::run_report(&args)?;
+        println!("report written to {}", index.display());
+        return Ok(());
+    }
+
     let config = BenchmarkConfig::parse();
 
     if let Some(path) = &config.generate_stream {

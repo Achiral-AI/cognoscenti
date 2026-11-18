@@ -14,7 +14,7 @@ use crate::http_stream::HttpStreamSystem;
 use crate::runner::BenchmarkConfig;
 use crate::scoring::{leak_rate, recall_at_k, LeakTrial};
 use crate::stability::paraphrase_agreement;
-use crate::stats::{bootstrap_ci_95, bootstrap_statistic_ci_95, describe_event_rate};
+use crate::stats::{bootstrap_ci_95, describe_event_rate};
 use crate::stream::{Actor, Stream, StreamEvent, StreamItem};
 use crate::tokens::{approx_token_count, geometric_checkpoints};
 use anyhow::{Context, Result};
@@ -266,7 +266,7 @@ pub fn recall_and_token_lines(results: &[QuestionResult], top_k: usize, seed: u6
 
 /// The category of a generated question id (`scope-017-q` -> `scope`), or
 /// `None` for any other id, so hand-made datasets are never regrouped.
-fn category_of(question_id: &str) -> Option<&str> {
+pub(crate) fn category_of(question_id: &str) -> Option<&str> {
     split_question_id(question_id).map(|(category, _)| category)
 }
 
@@ -703,6 +703,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
     if let Some(line) = label_line(config.label.as_deref()) {
         println!("{line}");
     }
+    let mut not_run_rows: Vec<crate::results::NotRun> = Vec::new();
     if config.skip_user_scope {
         let (kept, dropped) = drop_user_scope_trials(&stream);
         println!(
@@ -723,9 +724,30 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         }
         for (category, n) in by_category {
             println!("  not run, {category}: {n}");
+            not_run_rows.push(crate::results::NotRun {
+                category,
+                trials: n,
+            });
         }
         stream = kept;
     }
+    let mut run_file = crate::results::RunFile::new(
+        config.label.clone(),
+        crate::results::RunInfo {
+            stream_file: std::path::Path::new(path)
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+            stream_sha256: crate::manifest::sha256_file(path)?,
+            seed: config.seed,
+            top_k: config.top_k,
+            replicates: config.replicates,
+            questions: stream.questions().count(),
+            cognoscenti_commit: crate::manifest::current_commit(),
+            skip_user_scope: config.skip_user_scope,
+            not_run: not_run_rows,
+            limits: crate::results::standard_limits(),
+        },
+    );
 
     for name in parse_systems(&config.systems) {
         let (log, done) = open_replicate_log(config, std::path::Path::new(path), &stream, &name)?;
@@ -736,7 +758,11 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
                 "  replicate(s) {:?} loaded from the replicate log; their report is in the earlier output",
                 done.keys().collect::<Vec<_>>()
             );
-            run_replicate_section(config, &stream, &name, None, &done, log.as_ref())?;
+            let mut resumed = crate::results::SystemResults::empty(&name);
+            let section = run_replicate_section(config, &stream, &name, None, &done, log.as_ref())?;
+            resumed.replicates = section.rows;
+            resumed.flips = Some(section.flips);
+            run_file.systems.push(resumed);
             continue;
         }
         let mut system = build_system(
@@ -749,9 +775,14 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             let report =
                 token_usage_by_cycle(&stream, system.as_mut(), config.top_k, config.cycles);
             println!("=== {name}: tokens injected per question, by cycle ===");
+            let mut cycled = crate::results::SystemResults::empty(&name);
             for (cycle, mean_tokens) in report {
                 println!("  cycle {cycle}: mean tokens injected = {mean_tokens:.1}");
+                cycled
+                    .tokens_by_cycle
+                    .push(crate::results::CyclePoint { cycle, mean_tokens });
             }
+            run_file.systems.push(cycled);
             continue;
         }
 
@@ -806,49 +837,34 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         // were one. Derive a probability from the ranking first, same as
         // calibration.rs requires for any vendor that doesn't volunteer
         // one, and label it accordingly.
-        let pairs_by_question: Vec<Vec<(f64, bool)>> = results
-            .iter()
-            .zip(stream.questions())
-            .map(|(result, question)| calibration_pairs(result, &question.gold_event_ids))
-            .collect();
-        let derived_pairs = |question_indices: &[usize]| -> Vec<(f64, bool)> {
-            let raw: Vec<(f64, bool)> = question_indices
-                .iter()
-                .flat_map(|&i| pairs_by_question[i].iter().copied())
-                .collect();
-            if raw.is_empty() {
-                return raw;
-            }
-            let derived =
-                crate::calibration::derive_probabilities_from_scores(&raw, config.calibration_bins);
-            derived
-                .into_iter()
-                .zip(raw.iter().map(|&(_, observed)| observed))
-                .collect()
-        };
-        let all_questions: Vec<usize> = (0..pairs_by_question.len()).collect();
-        let all_pairs = derived_pairs(&all_questions);
-        if !all_pairs.is_empty() {
-            let brier = crate::calibration::brier_score(&all_pairs);
-            // ECE is resampled over questions, not over candidate rows: a
-            // question's candidates are not independent of each other.
-            let ece = bootstrap_statistic_ci_95(all_questions.len(), config.seed, |idx| {
-                let pairs = derived_pairs(idx);
-                if pairs.is_empty() {
-                    0.0
-                } else {
-                    crate::calibration::expected_calibration_error(&pairs, config.calibration_bins)
-                }
-            });
+        let calibration = crate::results::calibration_summary(
+            &stream,
+            &results,
+            config.calibration_bins,
+            config.seed,
+        );
+        if let Some(c) = &calibration {
             println!(
-                "  derived brier score = {brier:.4}; derived expected calibration error = {}",
-                ece.display()
+                "  derived brier score = {:.4}; derived expected calibration error = {}",
+                c.brier,
+                c.ece.display()
             );
         }
+        let mut system_results =
+            crate::results::SystemResults::from_replay(&name, &stream, &results, config.seed);
+        system_results.calibration = calibration;
 
         if config.replicates > 1 {
-            run_replicate_section(config, &stream, &name, Some(&results), &done, log.as_ref())?;
+            let section =
+                run_replicate_section(config, &stream, &name, Some(&results), &done, log.as_ref())?;
+            system_results.replicates = section.rows;
+            system_results.flips = Some(section.flips);
         }
+        run_file.systems.push(system_results);
+    }
+    if let Some(path) = &config.results_json {
+        run_file.save(path)?;
+        println!("results saved to {}", path.display());
     }
     Ok(())
 }
@@ -974,7 +990,7 @@ fn replicate_summary(
     index: usize,
     top_k: usize,
     results: &[QuestionResult],
-) -> (String, Vec<bool>) {
+) -> (String, Vec<bool>, crate::results::ReplicateRow) {
     let passes: Vec<bool> = results.iter().map(|r| r.recall_at_k >= 1.0).collect();
     let mean = results.iter().map(|r| r.recall_at_k).sum::<f64>() / results.len().max(1) as f64;
     // Same trials `leak_lines` reports: on a generated stream only the
@@ -998,7 +1014,21 @@ fn replicate_summary(
         flags.iter().filter(|f| **f).count(),
         flags.len(),
     );
-    (line, passes)
+    let row = crate::results::ReplicateRow {
+        index,
+        questions: passes.len(),
+        fully_recalled: passes.iter().filter(|p| **p).count(),
+        mean_recall: Some(mean),
+        leaked_trials: Some(flags.iter().filter(|f| **f).count()),
+        leak_trials: Some(flags.len()),
+    };
+    (line, passes, row)
+}
+
+/// The replicates a section ran or loaded, and the flip rate across them.
+struct ReplicateSection {
+    rows: Vec<crate::results::ReplicateRow>,
+    flips: crate::results::Stat,
 }
 
 /// Runs replicates 1.. (and replicate 0 unless `first` or the log has it),
@@ -1010,9 +1040,25 @@ fn run_replicate_section(
     first: Option<&[QuestionResult]>,
     done: &std::collections::BTreeMap<usize, Vec<bool>>,
     log: Option<&ReplicateLog>,
-) -> Result<()> {
+) -> Result<ReplicateSection> {
+    let mut rows: std::collections::BTreeMap<usize, crate::results::ReplicateRow> =
+        std::collections::BTreeMap::new();
+    for (index, passes) in done {
+        rows.insert(
+            *index,
+            crate::results::ReplicateRow {
+                index: *index,
+                questions: passes.len(),
+                fully_recalled: passes.iter().filter(|p| **p).count(),
+                mean_recall: None,
+                leaked_trials: None,
+                leak_trials: None,
+            },
+        );
+    }
     if let Some(results) = first {
-        let (line, passes) = replicate_summary(stream, 0, config.top_k, results);
+        let (line, passes, row) = replicate_summary(stream, 0, config.top_k, results);
+        rows.insert(0, row);
         println!("{line}");
         if let Some(log) = log {
             log.finished(0, name, passes)?;
@@ -1042,7 +1088,8 @@ fn run_replicate_section(
         first,
         done,
         |index, results| {
-            let (line, passes) = replicate_summary(stream, index, config.top_k, results);
+            let (line, passes, row) = replicate_summary(stream, index, config.top_k, results);
+            rows.insert(index, row);
             println!("{line}");
             if let Some(log) = log {
                 if let Err(err) = log.finished(index, name, passes) {
@@ -1054,12 +1101,16 @@ fn run_replicate_section(
     if let Some(err) = log_failure {
         return Err(err);
     }
+    let flipped = crate::stability::flipped_questions(&outcomes);
     println!(
         "  questions that flipped across {} replicate(s): {}",
         config.replicates,
-        describe_event_rate(&crate::stability::flipped_questions(&outcomes), config.seed)
+        describe_event_rate(&flipped, config.seed)
     );
-    Ok(())
+    Ok(ReplicateSection {
+        rows: rows.into_values().collect(),
+        flips: crate::results::Stat::from_events(&flipped, config.seed),
+    })
 }
 
 #[cfg(test)]
@@ -1568,7 +1619,7 @@ mod tests {
         );
 
         assert_eq!(seen_indices, vec![1, 2]);
-        assert_eq!(outcomes[0][0], true);
+        assert!(outcomes[0][0]);
     }
 
     // A real adapter against a live, stateful deployment (achiral.ai) can
