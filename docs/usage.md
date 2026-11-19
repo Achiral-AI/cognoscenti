@@ -386,6 +386,40 @@ tuned cohort never appears under, or is merged with, a plain one; the manifest
 table has a Retrieval column. A run without them has no `run.retrieval` and
 reads "deployment defaults". Only the `achiral` system takes the setting.
 
+### Rebuilding a results file from a replicate log
+
+A run that dies after some replicates finished, then resumes with `--resume`,
+writes a results file that holds only the replicates the resumed process ran:
+the earlier ones were loaded from the log, which keeps one pass or fail per
+question and nothing else. `rebuild-results` makes a complete cohort file from
+that log and the stream:
+
+```bash
+cognoscenti rebuild-results \
+  --replicate-log run.replicates.log --stream stream.jsonl --skip-user-scope \
+  --top-k 3 --seed 0 --label activationNoiseScale=0 \
+  --summary-lines run.out run.resume.out \
+  --out cohort.results.json
+cognoscenti report --results baselines.results.json cohort.results.json
+```
+
+What it fills in: per-question recall (the share of replicates that passed the
+question), pooled recall@k with a 95% bootstrap interval over questions,
+per-category recall with n and interval, and the flip rate across replicates,
+all with the seed rule a live run uses. A pass is recall@k = 1.0, so the rebuild
+refuses any kept question with more than one gold event, and refuses a log from
+another stream, seed, top-k or system, a replicate whose question count differs
+from the stream's, and replicates not numbered 0 upward without gaps.
+`--summary-lines` takes captured output; its `[replicate N] ...` lines supply
+the leak counts per replicate and are checked against the log (same top-k, same
+pass count, mean equal to passes / n), and a disagreement stops the rebuild.
+
+What it cannot fill in stays absent, never zero: tokens injected, calibration,
+the per-category leak table, and the commit that ran. The file lists the
+replicates loaded from the log (`run.from_replicate_log`), the manifest limits
+say so, and the report's calibration, tokens and leak sections name the cohort
+as "not available for replicates loaded from a replicate log".
+
 ### Reports
 
 `--results-json <path>` makes a replay write its numbers as JSON: one file per

@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `cognoscenti rebuild-results` rebuilds a complete cohort results file from a replicate log and
+  the stream, for a run whose own results were lost to a crash. It fills per-question, pooled and
+  per-category recall and the flip rate, checks printed summary lines against the log, refuses
+  anything it cannot reproduce honestly, and leaves tokens, calibration and the leak table absent.
+  `QuestionRow.tokens` is now optional.
 - `COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE` and `COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS` send
   `x-achiral-retrieval-mode` and `x-achiral-retrieval-params` on every `achiral` retrieve.
   Both are validated at startup, unset sends nothing, and the first retrieve of each replicate

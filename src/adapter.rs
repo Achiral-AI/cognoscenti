@@ -222,6 +222,22 @@ fn trial_key(id: &str) -> Option<String> {
         .then(|| format!("{category}-{digits}"))
 }
 
+/// The dropped trial keys (`scope-017`) counted per category, in first-seen order.
+pub fn not_run_by_category(dropped: &[String]) -> Vec<crate::results::NotRun> {
+    let mut rows: Vec<crate::results::NotRun> = Vec::new();
+    for key in dropped {
+        let category = key.rsplit_once('-').map_or(key.as_str(), |(c, _)| c);
+        match rows.iter_mut().find(|r| r.category == category) {
+            Some(row) => row.trials += 1,
+            None => rows.push(crate::results::NotRun {
+                category: category.to_string(),
+                trials: 1,
+            }),
+        }
+    }
+    rows
+}
+
 /// Removes every item of each generated trial that holds a user-scope
 /// event, and returns the dropped trial keys in first-seen order. A trial
 /// is the events and the question that share a `category-NNN` id prefix.
@@ -725,23 +741,9 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             dropped.len(),
             kept.questions().count()
         );
-        let mut by_category: Vec<(String, usize)> = Vec::new();
-        for key in &dropped {
-            let category = key
-                .rsplit_once('-')
-                .map_or(key.as_str(), |(c, _)| c)
-                .to_string();
-            match by_category.iter_mut().find(|(c, _)| *c == category) {
-                Some((_, n)) => *n += 1,
-                None => by_category.push((category, 1)),
-            }
-        }
-        for (category, n) in by_category {
-            println!("  not run, {category}: {n}");
-            not_run_rows.push(crate::results::NotRun {
-                category,
-                trials: n,
-            });
+        for row in not_run_by_category(&dropped) {
+            println!("  not run, {}: {}", row.category, row.trials);
+            not_run_rows.push(row);
         }
         stream = kept;
     }
@@ -761,6 +763,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             not_run: not_run_rows,
             limits: crate::results::standard_limits(),
             retrieval,
+            from_replicate_log: vec![],
         },
     );
 
@@ -2188,6 +2191,7 @@ mod tests {
                 not_run: vec![],
                 limits: vec![],
                 retrieval: None,
+                from_replicate_log: vec![],
             },
         );
         run.run.retrieval = setting;
@@ -2206,5 +2210,27 @@ mod tests {
         let mut plain = file_with(None);
         record_retrieval_echo(&mut plain, &Echoing(Some(serde_json::json!({}))));
         assert_eq!(plain.run.retrieval, None);
+    }
+
+    #[test]
+    fn dropped_trials_are_counted_per_category_in_first_seen_order() {
+        let keys: Vec<String> = ["scope-001", "owner-001", "scope-002", "scope-003"]
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
+        let rows = not_run_by_category(&keys);
+        assert_eq!(
+            rows,
+            vec![
+                crate::results::NotRun {
+                    category: "scope".into(),
+                    trials: 3
+                },
+                crate::results::NotRun {
+                    category: "owner".into(),
+                    trials: 1
+                },
+            ]
+        );
     }
 }

@@ -1298,13 +1298,36 @@ pub fn render_html(cohorts: &[RunFile]) -> String {
     h.push_str(&manifest_section(cohorts));
     h.push_str(&recall_section(&series));
     h.push_str(&flip_section(&series));
-    h.push_str(&calibration_section(&series));
-    h.push_str(&cycles_section(&series));
-    h.push_str(&leak_section(&series));
+    h.push_str(&with_rebuilt_note(calibration_section(&series), &series));
+    h.push_str(&with_rebuilt_note(cycles_section(&series), &series));
+    h.push_str(&with_rebuilt_note(leak_section(&series), &series));
     h.push_str(&settings_section(cohorts, &series));
     h.push_str(&replicates_section(&series));
     h.push_str("</main></body></html>");
     h
+}
+
+/// Puts, under a section's heading, the cohorts whose numbers came from a
+/// replicate log and so cannot have this section's data.
+fn with_rebuilt_note(section: String, series: &[Series<'_>]) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for s in series {
+        let name = s.cohort.cohort_name();
+        if !s.cohort.run.from_replicate_log.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        return section;
+    }
+    let note = format!(
+        r#"<p class="muted">Not available for replicates loaded from a replicate log: {}.</p>"#,
+        esc(&names.join(", "))
+    );
+    match section.find("</h2>") {
+        Some(at) => format!("{}{note}{}", &section[..at + 5], &section[at + 5..]),
+        None => section,
+    }
 }
 
 /// What the cohort asked the server for and what the server said it used.
@@ -1900,6 +1923,7 @@ mod tests {
             }],
             limits: crate::results::standard_limits(),
             retrieval: None,
+            from_replicate_log: vec![],
         }
     }
 
@@ -2234,6 +2258,29 @@ mod tests {
             echoed: None,
         });
         assert!(render_html(&[unchecked]).contains("server echo not recorded"));
+    }
+
+    #[test]
+    fn a_rebuilt_cohort_says_what_the_log_could_not_give_and_a_live_one_says_nothing() {
+        let mut rebuilt = cohort(
+            Some("rebuilt"),
+            "sha-a",
+            vec![system("achiral", &[("scope", &BIG)])],
+        );
+        rebuilt.run.from_replicate_log = vec![0, 1];
+        let html = render_html(&[rebuilt]);
+        for id in ["calibration", "cycles", "leaks"] {
+            let start = html.find(&format!(r#"<section id="{id}">"#)).unwrap();
+            let end = start + html[start..].find("</section>").unwrap();
+            let section = &html[start..end];
+            assert!(
+                section
+                    .contains("Not available for replicates loaded from a replicate log: rebuilt"),
+                "{id}"
+            );
+        }
+        let live = render_html(&fixture());
+        assert!(!live.contains("Not available for replicates loaded"));
     }
 
     #[test]

@@ -169,3 +169,69 @@ fn a_resumed_replicate_keeps_pass_counts_only_and_a_live_one_keeps_its_mean() {
     assert!(rows[1].mean_recall.is_some());
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_cohort_rebuilt_from_the_replicate_log_matches_the_live_numbers() {
+    use cognoscenti::rebuild::{run_rebuild, RebuildArgs};
+    let dir = tmp("rebuild");
+    // one gold event per question, as in the registered dataset
+    let config = GeneratorConfig {
+        scope_trials: 20,
+        supersession_chains: 12,
+        retrieval_questions: 12,
+        owner_trials: 12,
+        individual_items: 12,
+        agent_items: 12,
+        paraphrase_pairs: 12,
+        stable_items: 12,
+        ..GeneratorConfig::new(1)
+    };
+    let mut generated = generate(&config);
+    for item in &mut generated.items {
+        if let cognoscenti::stream::StreamItem::Question(q) = item {
+            q.gold_event_ids.truncate(1);
+        }
+    }
+    let stream = dir.join("stream.jsonl");
+    std::fs::write(&stream, to_jsonl(&generated, &config)).unwrap();
+    let log = dir.join("log.jsonl");
+    let live = dir.join("live.json");
+    replay(
+        &stream,
+        &live,
+        &[
+            "--systems",
+            "bm25",
+            "--replicates",
+            "3",
+            "--replicate-log",
+            log.to_str().unwrap(),
+        ],
+    );
+    // the log names the system "bm25"; a rebuild must be told the same
+    let rebuilt = dir.join("rebuilt.json");
+    let args = RebuildArgs::parse_from([
+        "rebuild-results",
+        "--replicate-log",
+        log.to_str().unwrap(),
+        "--stream",
+        stream.to_str().unwrap(),
+        "--skip-user-scope",
+        "--system",
+        "bm25",
+        "--label",
+        "rebuilt",
+        "--out",
+        rebuilt.to_str().unwrap(),
+    ]);
+    run_rebuild(&args).unwrap();
+    let live = RunFile::load(&live).unwrap();
+    let rebuilt = RunFile::load(&rebuilt).unwrap();
+    assert_eq!(live.systems[0].recall, rebuilt.systems[0].recall);
+    assert_eq!(live.systems[0].categories, rebuilt.systems[0].categories);
+    assert_eq!(live.systems[0].flips, rebuilt.systems[0].flips);
+    assert_eq!(live.run.not_run, rebuilt.run.not_run);
+    assert_eq!(live.run.questions, rebuilt.run.questions);
+    assert_eq!(rebuilt.run.from_replicate_log, vec![0, 1, 2]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

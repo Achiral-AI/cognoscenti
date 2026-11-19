@@ -24,6 +24,24 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if std::env::args().nth(1).as_deref() == Some("rebuild-results") {
+        let args = cognoscenti::rebuild::RebuildArgs::parse_from(
+            std::env::args().skip(1).enumerate().map(|(i, a)| {
+                if i == 0 {
+                    "cognoscenti rebuild-results".to_string()
+                } else {
+                    a
+                }
+            }),
+        );
+        let out = cognoscenti::rebuild::run_rebuild(&args)?;
+        println!(
+            "results rebuilt from the replicate log written to {}",
+            out.display()
+        );
+        return Ok(());
+    }
+
     let config = BenchmarkConfig::parse();
 
     if let Some(path) = &config.generate_stream {

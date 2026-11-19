@@ -93,7 +93,10 @@ pub struct QuestionRow {
     pub id: String,
     pub category: Option<String>,
     pub recall: f64,
-    pub tokens: usize,
+    /// Absent when the file was rebuilt from a replicate log, which keeps no
+    /// retrieved content.
+    #[serde(default)]
+    pub tokens: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -169,6 +172,11 @@ pub struct RunInfo {
     /// deployment's defaults.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retrieval: Option<RetrievalSetting>,
+    /// Replicates whose results were loaded from a replicate log instead of
+    /// measured by this file's run: only pass or fail per question survives.
+    /// Empty for a live run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from_replicate_log: Vec<usize>,
 }
 
 /// A non-default retrieval setting. Part of a cohort's identity: the cohort
@@ -289,7 +297,7 @@ impl SystemResults {
                 id: r.question_id.clone(),
                 category: category_of(&r.question_id).map(str::to_string),
                 recall: r.recall_at_k,
-                tokens: r.tokens_injected,
+                tokens: Some(r.tokens_injected),
             })
             .collect();
         let recalls: Vec<f64> = results.iter().map(|r| r.recall_at_k).collect();
@@ -297,32 +305,43 @@ impl SystemResults {
         out.recall = Some(Stat::from_values(&recalls, seed));
         out.tokens = Some(Stat::from_values(&tokens, seed));
 
-        let mut categories: Vec<&str> = Vec::new();
-        for result in results {
-            if let Some(category) = category_of(&result.question_id) {
-                if !categories.contains(&category) {
-                    categories.push(category);
-                }
-            }
-        }
-        out.categories = categories
+        let rows: Vec<(&str, f64)> = results
             .iter()
-            .map(|category| {
-                let recalls: Vec<f64> = results
-                    .iter()
-                    .filter(|r| category_of(&r.question_id) == Some(*category))
-                    .map(|r| r.recall_at_k)
-                    .collect();
-                NamedStat {
-                    name: category.to_string(),
-                    stat: Stat::from_values(&recalls, seed),
-                }
-            })
+            .map(|r| (r.question_id.as_str(), r.recall_at_k))
             .collect();
+        out.categories = category_stats(&rows, seed);
 
         out.leaks = leak_stats(stream, results, seed);
         out
     }
+}
+
+/// Recall per generated category (`(question id, recall)` rows in stream
+/// order), categories in first-seen order. Ids that name no category are left
+/// out, so a hand-made dataset is never regrouped.
+pub fn category_stats(rows: &[(&str, f64)], seed: u64) -> Vec<NamedStat> {
+    let mut categories: Vec<&str> = Vec::new();
+    for (id, _) in rows {
+        if let Some(category) = category_of(id) {
+            if !categories.contains(&category) {
+                categories.push(category);
+            }
+        }
+    }
+    categories
+        .iter()
+        .map(|category| {
+            let recalls: Vec<f64> = rows
+                .iter()
+                .filter(|(id, _)| category_of(id) == Some(*category))
+                .map(|(_, recall)| *recall)
+                .collect();
+            NamedStat {
+                name: category.to_string(),
+                stat: Stat::from_values(&recalls, seed),
+            }
+        })
+        .collect()
 }
 
 /// Leak rows as `leak_lines` reports them: each category holding a private
@@ -539,6 +558,7 @@ mod tests {
             not_run: vec![],
             limits: standard_limits(),
             retrieval: None,
+            from_replicate_log: vec![],
         }
     }
 
@@ -622,7 +642,7 @@ mod tests {
         assert_eq!(out.recall.as_ref().unwrap().n, 25);
         assert_eq!(out.questions.len(), 25);
         assert_eq!(out.questions[24].category, None);
-        assert_eq!(out.questions[0].tokens, 10);
+        assert_eq!(out.questions[0].tokens, Some(10));
     }
 
     #[test]

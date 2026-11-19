@@ -306,3 +306,28 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     file, and carries the setting in its cohort name, so it is reported beside, never pooled
     with, a cohort without one. Valid modes are the server's `rerank`, `aggr`, `graph`, `dense`
     and `hybrid`; `aggr-shadow` is not sent as a header.
+14. **Third start interrupted at replicate 1; resumed, 2026-11-19.** Replicate 0 finished in both
+    registered cohorts (2026-11-19T01:43:21Z, 1 h 49 min; recall@3 0.559 at `s = 0`, 0.544 at
+    `s = 0.2`). Both processes stopped at about 02:22:55Z during replicate 1 (`settle(): ... not
+    confirmed written within 120000ms` after HTTP 502 retries). Cause: at 02:17:31Z the operator
+    edited achiral.ai source in the checkout the dev API runs from; the API restarts on source
+    changes (`node --watch`) and was down for about 40 s with writes in flight, and a heavy test run
+    shared the machine. Replicate 1's orgs (`ct3-s0-2`, `ct3-s02-2`) hold partial data and are
+    discarded (outputs kept under `run3/crashed-1/`, none reported). The cohorts resumed at
+    2026-11-19T02:47Z with `--resume`: replicate 0 comes from the replicate log, replicates 1 to 4
+    run on fresh orgs `ct5-s0-1` to `-4` and `ct5-s02-1` to `-4`. Same binary (`7a6d238`), dataset,
+    flags and 15 s settle. No achiral.ai source is edited while cohorts run.
+15. **The registered cohorts' report is rebuilt from the replicate log, 2026-11-19.** Replicate 0
+    of each registered cohort ran in a process that crashed in replicate 1 before writing results;
+    the resumed process loaded replicate 0 from the replicate log and ran replicates 1 to 4, so its
+    results files hold only per-replicate summary rows and the flip rate. The cohorts' report is
+    therefore built with `cognoscenti rebuild-results` from each replicate log, the registered
+    stream (sha256 `2fc8d6c2…93e2`, `--skip-user-scope`, top-k 3, seed 0) and the printed summary
+    lines. It gives per-question recall (the share of the five replicates that passed it), pooled
+    recall@3 with a 95% bootstrap interval over the 544 kept questions (equal to the mean of the
+    five per-replicate recalls, because every kept question has one gold event or none), per-category
+    recall, and the flip rate. It lacks tokens injected, calibration, the per-category leak table and
+    the run's commit; leak counts per replicate are taken from the printed lines (0 of 141 trials in
+    every replicate shown) and are not reproducible from the log. The rebuilt file lists replicates
+    0 to 4 as loaded from the log, and the report says so in each section it cannot fill. Nothing in
+    the cohort run, its logs or its orgs was changed.
