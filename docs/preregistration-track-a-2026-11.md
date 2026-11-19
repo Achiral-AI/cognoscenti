@@ -306,7 +306,7 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     file, and carries the setting in its cohort name, so it is reported beside, never pooled
     with, a cohort without one. Valid modes are the server's `rerank`, `aggr`, `graph`, `dense`
     and `hybrid`; `aggr-shadow` is not sent as a header.
-14. **Third start interrupted at replicate 1; resumed, 2026-11-19.** Replicate 0 finished in both
+15. **Third start interrupted at replicate 1; resumed, 2026-11-19.** Replicate 0 finished in both
     registered cohorts (2026-11-19T01:43:21Z, 1 h 49 min; recall@3 0.559 at `s = 0`, 0.544 at
     `s = 0.2`). Both processes stopped at about 02:22:55Z during replicate 1 (`settle(): ... not
     confirmed written within 120000ms` after HTTP 502 retries). Cause: at 02:17:31Z the operator
@@ -317,7 +317,7 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     2026-11-19T02:47Z with `--resume`: replicate 0 comes from the replicate log, replicates 1 to 4
     run on fresh orgs `ct5-s0-1` to `-4` and `ct5-s02-1` to `-4`. Same binary (`7a6d238`), dataset,
     flags and 15 s settle. No achiral.ai source is edited while cohorts run.
-15. **The registered cohorts' report is rebuilt from the replicate log, 2026-11-19.** Replicate 0
+16. **The registered cohorts' report is rebuilt from the replicate log, 2026-11-19.** Replicate 0
     of each registered cohort ran in a process that crashed in replicate 1 before writing results;
     the resumed process loaded replicate 0 from the replicate log and ran replicates 1 to 4, so its
     results files hold only per-replicate summary rows and the flip rate. The cohorts' report is
