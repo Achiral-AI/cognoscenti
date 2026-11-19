@@ -348,6 +348,44 @@ replicate's index in `COGNOSCENTI_ACHIRAL_API_KEYS`. A log from another stream,
 seed, `--top-k` or system is refused. When replicate 0 is already in the log,
 the preliminary report is not printed again; it is in the earlier output.
 
+### Choosing the retrieval mode and params
+
+An evaluation deployment of achiral.ai (`INFERENCE_EVAL_MODE=true`) lets one run
+pick how retrieval works per request. Two variables on the `achiral` adapter send
+that choice on every retrieve (org, user and agent routes):
+
+| Variable | Header sent | Value |
+|---|---|---|
+| `COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE` | `x-achiral-retrieval-mode` | one of `rerank`, `aggr`, `graph`, `dense`, `hybrid` |
+| `COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS` | `x-achiral-retrieval-params` | a JSON object, for example `{"activationWeightScale":0.25}` |
+
+```bash
+COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE=rerank \
+COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS='{"activationWeightScale":0.25}' \
+cognoscenti --replay-stream dataset.jsonl --systems achiral --skip-user-scope \
+  --label "activation scale 0.25" --results-json results/scale-0.25.json
+```
+
+Unset (or blank) sends nothing, and the request is exactly what it was before.
+A mode outside the list, or params that are not a JSON object, stop the run
+before the first event is sent. `aggr-shadow` is an organisation setting the
+server ignores as a header, so it is refused. The parameter names and ranges are
+the server's (`services/memory/RetrievalParams.js` in achiral.ai).
+
+A server that does not run in evaluation mode ignores both headers. So the
+adapter reads the `retrieval` object each retrieve response carries and, on the
+first retrieve of every replicate, stops the run if the mode or any requested
+param differs from what the server says it used (a value the server clamped, or
+a name it does not know, counts as a difference). The echo from replicate 0 is
+kept.
+
+The mode, the params and the echo go into the results file under
+`run.retrieval`. The cohort name in the report is the label followed by the
+setting, `activation scale 0.25 [rerank · activationWeightScale=0.25]`, so a
+tuned cohort never appears under, or is merged with, a plain one; the manifest
+table has a Retrieval column. A run without them has no `run.retrieval` and
+reads "deployment defaults". Only the `achiral` system takes the setting.
+
 ### Reports
 
 `--results-json <path>` makes a replay write its numbers as JSON: one file per

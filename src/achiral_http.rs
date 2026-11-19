@@ -66,6 +66,10 @@ pub struct AchiralHttpSystem {
     /// to poll for. Defaults to `settle_ms`.
     confirm_ms: u64,
     retry: RetryPolicy,
+    retrieval: RetrievalOverride,
+    /// The server's `retrieval` object from this system's first retrieve,
+    /// once it matched the request.
+    retrieval_echo: Option<Value>,
     /// Org-scope events ingested since the last successful settle(),
     /// identified by the `businessEventId` achiral.ai's own ingest
     /// response returns - what settle() polls achiral.ai to confirm.
@@ -194,6 +198,143 @@ fn resolve_user_scope_id<'a>(
     }
 }
 
+/// Modes the server accepts in `x-achiral-retrieval-mode` (PublicMemoryService
+/// `EVAL_RETRIEVAL_MODES`). `aggr-shadow` is an organisation setting only: the
+/// server ignores it as a header, so it is rejected here rather than sent.
+pub const RETRIEVAL_MODES: [&str; 5] = ["rerank", "aggr", "graph", "dense", "hybrid"];
+
+/// A retrieval mode and/or retrieval params to send on every retrieve, from
+/// `COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE` and `_PARAMS`. The server honours the
+/// headers only on an evaluation deployment (`INFERENCE_EVAL_MODE=true`), so
+/// the adapter also checks the `retrieval` object the server echoes back.
+/// Neither is a secret; both are written into the results file.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RetrievalOverride {
+    mode: Option<String>,
+    params: Option<serde_json::Map<String, Value>>,
+}
+
+impl RetrievalOverride {
+    pub fn from_env() -> Result<Self> {
+        Self::from_env_values(
+            std::env::var("COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE")
+                .ok()
+                .as_deref(),
+            std::env::var("COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS")
+                .ok()
+                .as_deref(),
+        )
+    }
+
+    /// Blank counts as unset. Anything else must be valid, so a typo stops the
+    /// run before a single event is sent.
+    pub fn from_env_values(mode: Option<&str>, params: Option<&str>) -> Result<Self> {
+        let mode = mode
+            .map(|m| m.trim().to_ascii_lowercase())
+            .filter(|m| !m.is_empty());
+        if let Some(m) = &mode {
+            if !RETRIEVAL_MODES.contains(&m.as_str()) {
+                anyhow::bail!(
+                    "COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE={m:?} is not a mode the server honours; use one of: {}",
+                    RETRIEVAL_MODES.join(", ")
+                );
+            }
+        }
+        let params = params
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+            .map(|p| {
+                let value: Value = serde_json::from_str(p)
+                    .with_context(|| "COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS is not valid JSON")?;
+                match value {
+                    Value::Object(map) => Ok(map),
+                    _ => Err(anyhow::anyhow!(
+                        "COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS must be a JSON object"
+                    )),
+                }
+            })
+            .transpose()?;
+        Ok(Self { mode, params })
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.mode.is_some() || self.params.is_some()
+    }
+
+    pub fn mode(&self) -> Option<&str> {
+        self.mode.as_deref()
+    }
+
+    pub fn params(&self) -> Option<Value> {
+        self.params.clone().map(Value::Object)
+    }
+
+    /// Checks the `retrieval` object a retrieve response echoes against what
+    /// was asked for, and returns it for the manifest. `None` when nothing was
+    /// requested. An error means the deployment did not use the setting, so
+    /// anything it returned would be filed under the wrong label.
+    pub fn check_echo(&self, response: &Value) -> Result<Option<Value>> {
+        if !self.is_active() {
+            return Ok(None);
+        }
+        let echoed = response
+            .get("retrieval")
+            .filter(|r| r.is_object())
+            .with_context(|| {
+                "retrieval settings were requested but the response carries no `retrieval` \
+                 object: the deployment is not running with INFERENCE_EVAL_MODE=true, so it \
+                 ignored them"
+            })?;
+        if let Some(mode) = &self.mode {
+            if echoed["mode"].as_str() != Some(mode.as_str()) {
+                anyhow::bail!(
+                    "requested retrieval mode {mode:?} but the server used {}",
+                    echoed["mode"]
+                );
+            }
+        }
+        for (key, wanted) in self.params.iter().flatten() {
+            match echoed.get(key) {
+                Some(used) if same_value(wanted, used) => {}
+                Some(used) => anyhow::bail!(
+                    "requested retrieval param {key} = {wanted} but the server used {used}"
+                ),
+                None => anyhow::bail!(
+                    "requested retrieval param {key} = {wanted} but the server did not echo it (unknown name?)"
+                ),
+            }
+        }
+        Ok(Some(echoed.clone()))
+    }
+}
+
+/// Numbers compare by value, so `2` and `2.0` match.
+fn same_value(a: &Value, b: &Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) => x == y,
+        _ => a == b,
+    }
+}
+
+/// Headers for one retrieve: simulated time, then any retrieval override.
+/// With no override this is exactly the single eval-now header.
+pub fn retrieve_headers(
+    retrieval: &RetrievalOverride,
+    now: DateTime<Utc>,
+) -> Vec<(&'static str, String)> {
+    let mut headers = vec![eval_now_header(now)];
+    if let Some(mode) = &retrieval.mode {
+        headers.push(("x-achiral-retrieval-mode", mode.clone()));
+    }
+    if let Some(params) = &retrieval.params {
+        headers.push((
+            "x-achiral-retrieval-params",
+            Value::Object(params.clone()).to_string(),
+        ));
+    }
+    headers
+}
+
 impl AchiralHttpSystem {
     pub fn from_env() -> Result<Self> {
         Self::from_env_at(0)
@@ -236,6 +377,8 @@ impl AchiralHttpSystem {
             confirm_ms,
             unconfirmed_business_event_ids: Vec::new(),
             retry: RetryPolicy::from_env()?,
+            retrieval: RetrievalOverride::from_env()?,
+            retrieval_echo: None,
             user_member_ids,
         })
     }
@@ -762,9 +905,27 @@ fn run_json_post(
     )
 }
 
+impl AchiralHttpSystem {
+    /// Stops the run when the first retrieve shows the server did not use the
+    /// requested retrieval settings.
+    fn verify_retrieval(&mut self, response: &Value) {
+        if self.retrieval_echo.is_some() {
+            return;
+        }
+        self.retrieval_echo = self
+            .retrieval
+            .check_echo(response)
+            .unwrap_or_else(|err| panic!("achiral retrieval settings not honoured: {err:#}"));
+    }
+}
+
 impl MemorySystem for AchiralHttpSystem {
     fn name(&self) -> &str {
         "achiral"
+    }
+
+    fn retrieval_echo(&self) -> Option<Value> {
+        self.retrieval_echo.clone()
     }
 
     fn ingest(&mut self, event: &StreamEvent) {
@@ -867,7 +1028,7 @@ impl MemorySystem for AchiralHttpSystem {
     ) -> Vec<(String, f64)> {
         let url = retrieve_url(&self.base_url, actor);
         let payload = retrieve_payload(query, top_k);
-        let headers = [eval_now_header(now)];
+        let headers = retrieve_headers(&self.retrieval, now);
         let response = run_json_post(
             &self.retry,
             &url,
@@ -876,6 +1037,7 @@ impl MemorySystem for AchiralHttpSystem {
             &payload,
         )
         .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
+        self.verify_retrieval(&response);
         parse_recall_response(&response)
             .into_iter()
             .take(top_k)
@@ -891,7 +1053,7 @@ impl MemorySystem for AchiralHttpSystem {
     ) -> Vec<String> {
         let url = retrieve_url(&self.base_url, actor);
         let payload = evidence_graph_payload(query, top_k);
-        let headers = [eval_now_header(now)];
+        let headers = retrieve_headers(&self.retrieval, now);
         let response = run_json_post(
             &self.retry,
             &url,
@@ -1452,6 +1614,8 @@ mod tests {
             confirm_ms: 30,
             unconfirmed_business_event_ids: Vec::new(),
             retry: RetryPolicy::default(),
+            retrieval: RetrievalOverride::default(),
+            retrieval_echo: None,
             user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
@@ -1471,6 +1635,8 @@ mod tests {
             confirm_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
             retry: RetryPolicy::default(),
+            retrieval: RetrievalOverride::default(),
+            retrieval_echo: None,
             user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
@@ -1490,6 +1656,8 @@ mod tests {
             confirm_ms: 0,
             unconfirmed_business_event_ids: Vec::new(),
             retry: RetryPolicy::default(),
+            retrieval: RetrievalOverride::default(),
+            retrieval_echo: None,
             user_member_ids: HashMap::new(),
         };
         assert!(system.capabilities().settle);
@@ -1786,5 +1954,146 @@ mod tests {
             headers,
             vec![("Idempotency-Key", "cognoscenti-e1".to_string())]
         );
+    }
+
+    // Retrieval-mode and params headers (Plan 40): honoured only on an
+    // evaluation deployment, so the adapter validates what it sends and
+    // checks what the server says it used.
+    fn over(mode: Option<&str>, params: Option<&str>) -> Result<RetrievalOverride> {
+        RetrievalOverride::from_env_values(mode, params)
+    }
+
+    #[test]
+    fn with_neither_variable_set_the_retrieve_request_is_exactly_the_eval_now_header() {
+        let now: DateTime<Utc> = "2026-01-15T00:00:00Z".parse().unwrap();
+        let none = over(None, None).unwrap();
+        assert!(!none.is_active());
+        assert_eq!(retrieve_headers(&none, now), vec![eval_now_header(now)]);
+        // a blank value is the same as unset
+        let blank = over(Some("  "), Some("")).unwrap();
+        assert!(!blank.is_active());
+        assert_eq!(retrieve_headers(&blank, now), vec![eval_now_header(now)]);
+    }
+
+    #[test]
+    fn a_mode_and_params_become_two_extra_headers_after_eval_now() {
+        let now: DateTime<Utc> = "2026-01-15T00:00:00Z".parse().unwrap();
+        let o = over(Some("aggr"), Some(r#"{"activationWeightScale": 0.25}"#)).unwrap();
+        assert_eq!(
+            retrieve_headers(&o, now),
+            vec![
+                eval_now_header(now),
+                ("x-achiral-retrieval-mode", "aggr".to_string()),
+                (
+                    "x-achiral-retrieval-params",
+                    r#"{"activationWeightScale":0.25}"#.to_string()
+                ),
+            ]
+        );
+        let only_params = over(None, Some(r#"{"alpha":2}"#)).unwrap();
+        assert_eq!(retrieve_headers(&only_params, now).len(), 2);
+    }
+
+    #[test]
+    fn every_mode_the_server_honours_is_accepted_in_any_case() {
+        for mode in ["rerank", "aggr", "graph", "dense", "hybrid", " Aggr "] {
+            assert!(over(Some(mode), None).is_ok(), "{mode}");
+        }
+        assert_eq!(over(Some(" Aggr "), None).unwrap().mode(), Some("aggr"));
+    }
+
+    #[test]
+    fn an_unknown_mode_stops_the_run_and_names_the_valid_ones() {
+        // aggr-shadow is an org setting; the server ignores it as a header
+        for bad in ["aggr-shadow", "bm25", "reranker"] {
+            let err = over(Some(bad), None).unwrap_err().to_string();
+            assert!(err.contains("COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE"), "{err}");
+            assert!(err.contains(bad), "{err}");
+            assert!(err.contains("rerank, aggr, graph, dense, hybrid"), "{err}");
+        }
+    }
+
+    #[test]
+    fn params_must_be_a_json_object() {
+        for bad in ["not json", "[1]", "3", "\"x\"", "null", "{"] {
+            let err = over(None, Some(bad)).unwrap_err().to_string();
+            assert!(
+                err.contains("COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS"),
+                "{bad}: {err}"
+            );
+        }
+    }
+
+    fn echo(retrieval: Value) -> Value {
+        json!({"object": "memory.search_result", "data": [], "retrieval": retrieval})
+    }
+
+    #[test]
+    fn an_inactive_override_checks_nothing_and_records_nothing() {
+        let none = over(None, None).unwrap();
+        assert_eq!(none.check_echo(&json!({"data": []})).unwrap(), None);
+    }
+
+    #[test]
+    fn a_matching_echo_is_returned_for_the_manifest() {
+        let o = over(Some("aggr"), Some(r#"{"activationWeightScale":0.25}"#)).unwrap();
+        let body = echo(json!({"mode": "aggr", "alpha": 1, "activationWeightScale": 0.25}));
+        let got = o.check_echo(&body).unwrap().unwrap();
+        assert_eq!(got["mode"], "aggr");
+        assert_eq!(got["activationWeightScale"], 0.25);
+    }
+
+    #[test]
+    fn an_integer_and_the_same_float_match() {
+        let o = over(None, Some(r#"{"alpha": 2.0}"#)).unwrap();
+        assert!(o
+            .check_echo(&echo(json!({"mode": "rerank", "alpha": 2})))
+            .is_ok());
+    }
+
+    #[test]
+    fn a_server_that_ignores_the_headers_cannot_produce_a_mislabelled_cohort() {
+        let o = over(Some("aggr"), Some(r#"{"activationWeightScale":0.25}"#)).unwrap();
+        // no `retrieval` object at all: not an evaluation deployment
+        let err = o.check_echo(&json!({"data": []})).unwrap_err().to_string();
+        assert!(err.contains("INFERENCE_EVAL_MODE"), "{err}");
+        assert!(
+            o.check_echo(&json!({"retrieval": "aggr"})).is_err(),
+            "a retrieval value that is not an object is no echo"
+        );
+        // eval deployment, but the mode was not used
+        let err = o
+            .check_echo(&echo(
+                json!({"mode": "rerank", "activationWeightScale": 0.25}),
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("mode") && err.contains("aggr") && err.contains("rerank"),
+            "{err}"
+        );
+        // the server clamped the value
+        let o = over(None, Some(r#"{"activationWeightScale": 500}"#)).unwrap();
+        let err = o
+            .check_echo(&echo(
+                json!({"mode": "rerank", "activationWeightScale": 100}),
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("activationWeightScale"), "{err}");
+        // a parameter the server does not know is never echoed
+        let o = over(None, Some(r#"{"activationWeigthScale": 0.5}"#)).unwrap();
+        let err = o
+            .check_echo(&echo(json!({"mode": "rerank", "activationWeightScale": 1})))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("activationWeigthScale"), "{err}");
+    }
+
+    #[test]
+    fn a_requested_mode_alone_is_checked_against_the_echoed_mode() {
+        let o = over(Some("dense"), None).unwrap();
+        assert!(o.check_echo(&echo(json!({"mode": "dense"}))).is_ok());
+        assert!(o.check_echo(&echo(json!({"mode": "rerank"}))).is_err());
     }
 }

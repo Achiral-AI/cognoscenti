@@ -1307,6 +1307,28 @@ pub fn render_html(cohorts: &[RunFile]) -> String {
     h
 }
 
+/// What the cohort asked the server for and what the server said it used.
+fn retrieval_cell(setting: Option<&crate::results::RetrievalSetting>) -> String {
+    let Some(setting) = setting else {
+        return "deployment defaults".to_string();
+    };
+    let mut cell = String::new();
+    if let Some(mode) = &setting.mode {
+        cell.push_str(&format!("requested mode {mode}"));
+    }
+    if let Some(params) = &setting.params {
+        if !cell.is_empty() {
+            cell.push_str("; ");
+        }
+        cell.push_str(&format!("requested params {params}"));
+    }
+    match &setting.echoed {
+        Some(echo) => cell.push_str(&format!("; server echoed {echo}")),
+        None => cell.push_str("; server echo not recorded"),
+    }
+    cell
+}
+
 fn manifest_section(cohorts: &[RunFile]) -> String {
     let mut h = String::from(r#"<section id="manifest"><h2>Run manifest</h2>"#);
     h.push_str(&table_open(&[
@@ -1318,6 +1340,7 @@ fn manifest_section(cohorts: &[RunFile]) -> String {
         "Replicates",
         "Questions",
         "Commit",
+        "Retrieval",
         "Not run",
     ]));
     for c in cohorts {
@@ -1333,7 +1356,7 @@ fn manifest_section(cohorts: &[RunFile]) -> String {
         };
         let _ = write!(
             h,
-            "<tr><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td></tr>",
+            "<tr><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td><code>{}</code></td><td>{}</td><td>{}</td></tr>",
             esc(&c.cohort_name()),
             esc(&c.run.stream_file),
             esc(&c.run.stream_sha256),
@@ -1342,6 +1365,7 @@ fn manifest_section(cohorts: &[RunFile]) -> String {
             c.run.replicates,
             c.run.questions,
             esc(c.run.cognoscenti_commit.as_deref().map_or("unknown", |s| &s[..s.len().min(12)])),
+            esc(&retrieval_cell(c.run.retrieval.as_ref())),
             esc(&not_run),
         );
     }
@@ -1875,6 +1899,7 @@ mod tests {
                 trials: 5,
             }],
             limits: crate::results::standard_limits(),
+            retrieval: None,
         }
     }
 
@@ -2162,6 +2187,53 @@ mod tests {
         assert!(html.contains("achiral · noise 0"));
         assert!(html.contains("bm25 · baselines"));
         assert!(!html.contains("achiral · baselines"));
+    }
+
+    #[test]
+    fn a_cohort_with_a_retrieval_setting_is_labelled_with_it_and_its_echo_is_listed() {
+        let mut tuned = cohort(
+            Some("noise 0"),
+            "sha-a",
+            vec![system("achiral", &[("scope", &BIG)])],
+        );
+        tuned.run.retrieval = Some(crate::results::RetrievalSetting {
+            mode: Some("aggr".into()),
+            params: Some(serde_json::json!({"activationWeightScale": 0.25})),
+            echoed: Some(serde_json::json!({"mode": "aggr", "activationWeightScale": 0.25})),
+        });
+        let plain = cohort(
+            Some("noise 0"),
+            "sha-a",
+            vec![system("achiral", &[("scope", &BIG)])],
+        );
+        // same label, different setting: two cohorts, never one
+        assert!(validate_cohorts(&[tuned.clone(), plain.clone()]).is_ok());
+        let html = render_html(&[tuned, plain]);
+        assert!(
+            html.contains("achiral · noise 0 [aggr · activationWeightScale=0.25]"),
+            "series label"
+        );
+        assert!(
+            html.contains("<th>Retrieval</th>") || html.contains("Retrieval"),
+            "column"
+        );
+        assert!(html.contains("requested mode aggr"), "{html}");
+        assert!(html.contains("server echoed"), "echo shown");
+        assert!(
+            html.contains("deployment defaults"),
+            "the plain cohort says so"
+        );
+        let mut unchecked = cohort(
+            Some("x"),
+            "sha-a",
+            vec![system("achiral", &[("scope", &BIG)])],
+        );
+        unchecked.run.retrieval = Some(crate::results::RetrievalSetting {
+            mode: Some("dense".into()),
+            params: None,
+            echoed: None,
+        });
+        assert!(render_html(&[unchecked]).contains("server echo not recorded"));
     }
 
     #[test]

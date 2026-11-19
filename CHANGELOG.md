@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE` and `COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS` send
+  `x-achiral-retrieval-mode` and `x-achiral-retrieval-params` on every `achiral` retrieve.
+  Both are validated at startup, unset sends nothing, and the first retrieve of each replicate
+  must echo them back or the run stops. The setting is written to the results file and into the
+  cohort name and manifest table of the report.
 - `--results-json` writes a replay's numbers as JSON, and `cognoscenti report` turns one or more
   of those files (one per labelled cohort) into a self-contained HTML page with `results.json`
   and `results.csv` beside it. Inline SVG in colour that carries meaning (a hue per Achiral

@@ -36,6 +36,13 @@ pub trait MemorySystem {
         top_k: usize,
     ) -> Vec<String>;
 
+    /// The retrieval settings the system itself reported using on its first
+    /// retrieve, for the manifest. Only a system that can be told how to
+    /// retrieve has one.
+    fn retrieval_echo(&self) -> Option<serde_json::Value> {
+        None
+    }
+
     /// `retrieve`'s ranking, each id paired with a confidence score, for
     /// calibration (Plan 25/26: "native" calibration on a system's own
     /// score, "derived" on anything else). Defaults to a rank-derived
@@ -703,6 +710,13 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
     if let Some(line) = label_line(config.label.as_deref()) {
         println!("{line}");
     }
+    let retrieval = requested_retrieval(
+        &parse_systems(&config.systems),
+        &crate::achiral_http::RetrievalOverride::from_env()?,
+    );
+    if let Some(setting) = &retrieval {
+        println!("retrieval: {}", setting.describe());
+    }
     let mut not_run_rows: Vec<crate::results::NotRun> = Vec::new();
     if config.skip_user_scope {
         let (kept, dropped) = drop_user_scope_trials(&stream);
@@ -746,6 +760,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             skip_user_scope: config.skip_user_scope,
             not_run: not_run_rows,
             limits: crate::results::standard_limits(),
+            retrieval,
         },
     );
 
@@ -782,6 +797,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
                     .tokens_by_cycle
                     .push(crate::results::CyclePoint { cycle, mean_tokens });
             }
+            record_retrieval_echo(&mut run_file, system.as_ref());
             run_file.systems.push(cycled);
             continue;
         }
@@ -792,6 +808,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             }
         }
         let results = replay_stream(&stream, system.as_mut(), config.top_k);
+        record_retrieval_echo(&mut run_file, system.as_ref());
         println!("=== {name} ===");
         for result in &results {
             let gap_suffix = match result.gap_disclosure {
@@ -867,6 +884,32 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         println!("results saved to {}", path.display());
     }
     Ok(())
+}
+
+/// The retrieval setting to record: only `achiral` can be told how to
+/// retrieve, and only a non-default setting is recorded.
+fn requested_retrieval(
+    systems: &[String],
+    requested: &crate::achiral_http::RetrievalOverride,
+) -> Option<crate::results::RetrievalSetting> {
+    if !requested.is_active() || !systems.iter().any(|s| s == "achiral") {
+        return None;
+    }
+    Some(crate::results::RetrievalSetting {
+        mode: requested.mode().map(String::from),
+        params: requested.params(),
+        echoed: None,
+    })
+}
+
+/// Keeps what the server said it used, from the first retrieve of replicate 0
+/// (every later replicate checks its own echo and stops the run on a
+/// mismatch).
+fn record_retrieval_echo(run_file: &mut crate::results::RunFile, system: &dyn MemorySystem) {
+    if let (Some(setting), Some(echo)) = (run_file.run.retrieval.as_mut(), system.retrieval_echo())
+    {
+        setting.echoed.get_or_insert(echo);
+    }
 }
 
 /// The replicate log a run writes, with the identity every record carries.
@@ -2093,5 +2136,75 @@ mod tests {
         // capability.
         system.use_feedback(&["e1".to_string()], true);
         system.settle(now);
+    }
+
+    fn quarter() -> crate::achiral_http::RetrievalOverride {
+        crate::achiral_http::RetrievalOverride::from_env_values(
+            Some("aggr"),
+            Some(r#"{"activationWeightScale":0.25}"#),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn only_a_run_with_achiral_and_a_non_default_setting_records_one() {
+        let achiral = vec!["bm25".to_string(), "achiral".to_string()];
+        let setting = requested_retrieval(&achiral, &quarter()).unwrap();
+        assert_eq!(setting.mode.as_deref(), Some("aggr"));
+        assert_eq!(setting.params.unwrap()["activationWeightScale"], 0.25);
+        assert_eq!(setting.echoed, None);
+        // the setting reaches no baseline, so a baselines-only run has none
+        assert_eq!(requested_retrieval(&["bm25".to_string()], &quarter()), None);
+        let none = crate::achiral_http::RetrievalOverride::default();
+        assert_eq!(requested_retrieval(&achiral, &none), None);
+    }
+
+    struct Echoing(Option<serde_json::Value>);
+    impl MemorySystem for Echoing {
+        fn name(&self) -> &str {
+            "achiral"
+        }
+        fn ingest(&mut self, _: &StreamEvent) {}
+        fn retrieve(&mut self, _: &str, _: &Actor, _: DateTime<Utc>, _: usize) -> Vec<String> {
+            Vec::new()
+        }
+        fn retrieval_echo(&self) -> Option<serde_json::Value> {
+            self.0.clone()
+        }
+    }
+
+    fn file_with(setting: Option<crate::results::RetrievalSetting>) -> crate::results::RunFile {
+        let mut run = crate::results::RunFile::new(
+            None,
+            crate::results::RunInfo {
+                stream_file: "s".into(),
+                stream_sha256: "x".into(),
+                seed: 0,
+                top_k: 3,
+                replicates: 1,
+                questions: 1,
+                cognoscenti_commit: None,
+                skip_user_scope: false,
+                not_run: vec![],
+                limits: vec![],
+                retrieval: None,
+            },
+        );
+        run.run.retrieval = setting;
+        run
+    }
+
+    #[test]
+    fn the_servers_echo_is_kept_with_the_requested_setting_and_not_overwritten() {
+        let setting = requested_retrieval(&["achiral".to_string()], &quarter());
+        let mut file = file_with(setting);
+        let first = serde_json::json!({"mode": "aggr", "activationWeightScale": 0.25});
+        record_retrieval_echo(&mut file, &Echoing(Some(first.clone())));
+        record_retrieval_echo(&mut file, &Echoing(Some(serde_json::json!({"mode": "x"}))));
+        assert_eq!(file.run.retrieval.unwrap().echoed, Some(first));
+        // a default run has nothing to attach an echo to
+        let mut plain = file_with(None);
+        record_retrieval_echo(&mut plain, &Echoing(Some(serde_json::json!({}))));
+        assert_eq!(plain.run.retrieval, None);
     }
 }

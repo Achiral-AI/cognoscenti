@@ -164,6 +164,39 @@ pub struct RunInfo {
     pub skip_user_scope: bool,
     pub not_run: Vec<NotRun>,
     pub limits: Vec<String>,
+    /// Retrieval mode and params the run asked the server for, and the
+    /// `retrieval` object the server echoed. Absent for a run with the
+    /// deployment's defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retrieval: Option<RetrievalSetting>,
+}
+
+/// A non-default retrieval setting. Part of a cohort's identity: the cohort
+/// name carries it, so a run with `activationWeightScale: 0.25` is never
+/// shown under, or merged with, the plain label.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RetrievalSetting {
+    pub mode: Option<String>,
+    pub params: Option<serde_json::Value>,
+    /// What the server reported using on the first retrieve.
+    pub echoed: Option<serde_json::Value>,
+}
+
+impl RetrievalSetting {
+    /// `aggr · activationWeightScale=0.25, alpha=2`
+    pub fn describe(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(mode) = &self.mode {
+            parts.push(mode.clone());
+        }
+        if let Some(params) = self.params.as_ref().and_then(|p| p.as_object()) {
+            let pairs: Vec<String> = params.iter().map(|(k, v)| format!("{k}={v}")).collect();
+            if !pairs.is_empty() {
+                parts.push(pairs.join(", "));
+            }
+        }
+        parts.join(" · ")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -218,7 +251,11 @@ impl RunFile {
 
     /// The name a cohort goes by in a report.
     pub fn cohort_name(&self) -> String {
-        self.label.clone().unwrap_or_else(|| "no label".to_string())
+        let label = self.label.clone().unwrap_or_else(|| "no label".to_string());
+        match self.run.retrieval.as_ref().map(RetrievalSetting::describe) {
+            Some(setting) if !setting.is_empty() => format!("{label} [{setting}]"),
+            _ => label,
+        }
     }
 }
 
@@ -501,6 +538,7 @@ mod tests {
             skip_user_scope: false,
             not_run: vec![],
             limits: standard_limits(),
+            retrieval: None,
         }
     }
 
@@ -624,6 +662,52 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("schema 99"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn aggr_quarter() -> RetrievalSetting {
+        RetrievalSetting {
+            mode: Some("aggr".into()),
+            params: Some(serde_json::json!({"activationWeightScale": 0.25})),
+            echoed: Some(serde_json::json!({"mode": "aggr", "activationWeightScale": 0.25})),
+        }
+    }
+
+    #[test]
+    fn a_non_default_retrieval_setting_is_part_of_the_cohort_name() {
+        let mut run = info();
+        run.retrieval = Some(aggr_quarter());
+        let labelled = RunFile::new(Some("cohort-a".into()), run.clone());
+        assert_eq!(
+            labelled.cohort_name(),
+            "cohort-a [aggr · activationWeightScale=0.25]"
+        );
+        let unlabelled = RunFile::new(None, run);
+        assert_eq!(
+            unlabelled.cohort_name(),
+            "no label [aggr · activationWeightScale=0.25]"
+        );
+        let plain = RunFile::new(Some("cohort-a".into()), info());
+        assert_eq!(plain.cohort_name(), "cohort-a");
+        assert_ne!(plain.cohort_name(), labelled.cohort_name());
+    }
+
+    #[test]
+    fn the_retrieval_setting_survives_the_file_and_older_files_without_it_load() {
+        let dir = std::env::temp_dir().join(format!("cogn-retr-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut run = info();
+        run.retrieval = Some(aggr_quarter());
+        let file = RunFile::new(None, run);
+        let path = dir.join("r.json");
+        file.save(&path).unwrap();
+        assert_eq!(RunFile::load(&path).unwrap(), file);
+        // a default run writes no retrieval key; a file lacking it still loads
+        let plain = RunFile::new(None, info());
+        plain.save(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("retrieval"), "{text}");
+        assert_eq!(RunFile::load(&path).unwrap().run.retrieval, None);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

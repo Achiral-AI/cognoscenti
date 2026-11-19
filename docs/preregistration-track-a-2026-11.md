@@ -258,3 +258,51 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    before this change (the crashed cohorts) printed text only and have no results file; the
    report reads files written from now on.
 
+11. **Second start of the registered cohorts, 2026-11-18, and the natural-names cohorts
+    announced.** Both registered cohorts (`activationNoiseScale=0` and `activationNoiseScale=0.2`,
+    5 replicates each, registered dataset sha256 `2fc8d6c2…93e2`, `--skip-user-scope`, top-k 3,
+    seed 0) restarted at 2026-11-18T23:46:54Z on freshly provisioned orgs `ct2-s0-1` to `-5` and
+    `ct2-s02-1` to `-5` (`rerank` mode, agents `report-agent`, `scribe-agent`, `triage-agent` and
+    `ops-agent`), with Cognoscenti `7a6d238` (retry, per-replicate log, results JSON). The
+    achiral.ai build under test is `feat/benchmarks` at `b1269043` plus uncommitted dev-only changes
+    (compose port mapping for the container Ollama). It carries what the first start did not:
+    the org-recall pre-filter that stops agent and client notes from displacing org results
+    (`a77ab8e7`, `817beef6`), member-path activation noise (`ca0a1134`) and the Node 26.13.1 image.
+    The dev API's model backend is now a host-side Ollama; retrieval in this run uses no model.
+    The earlier cohort data (the aborted and crashed starts) is discarded and not merged.
+    **Announced before it runs:** the `natural-names` variant (item 8, sha256 `b3e7ba72…881c`)
+    will run as its own labelled cohort set, 5 replicates at each of `activationNoiseScale=0` and
+    `activationNoiseScale=0.2` on further fresh orgs, started only after the registered cohorts
+    finish, with the same flags. Its rows are reported beside, never pooled with, the registered
+    dataset's rows.
+12. **The second start failed within 35 seconds; third start, 2026-11-18T23:54:13Z.** The
+    second start (item 11, orgs `ct2-*`) stopped on its first agent-scope write with
+    `agent_memory_write_failed`. Cause: achiral.ai's `AgentMemoryStore` looked up an existing
+    write by idempotency key with a plain `{field: value}` filter map, which the Weaviate client
+    rejects (`Unsupported filter path`). The path never ran before, because the adapter sent no
+    idempotency key until the retry change (deviation 9). The fix builds the lookup from
+    `andFilter(equalFilter(...))` and is test-first (`AgentMemoryStore.test.js`, now run through
+    the real filter converter). It changes no retrieval, ranking, dataset or scoring rule. The
+    `ct2-*` orgs and their partial data are discarded (kept under `aborted-2/`, none reported);
+    the cohorts restarted on fresh orgs `ct3-s0-1` to `-5` and `ct3-s02-1` to `-5` with the same
+    flags and Cognoscenti `7a6d238`. The announcement in item 11 still holds: `natural-names`
+    cohorts start only after these finish.
+13. **Blind settle wait lowered for the natural-names cohorts, 2026-11-19.** Replicate 0 of the
+    registered cohorts took 1 h 49 min (started 2026-11-18T23:54:13Z, finished 2026-11-19T01:43:21Z).
+    `settle()` runs before every question; it polls for confirmation when org-scope writes are
+    pending and otherwise sleeps `COGNOSCENTI_ACHIRAL_SETTLE_MS` (15 s). In the 860-question stream
+    142 settles are blind, about 35 minutes at 15 s. A probe on a fresh org (20 distinct agent notes,
+    each retrieved right after its write) found every note stored and, where the note ranked in the
+    top 3, retrievable within 0.5 s of the write. The `natural-names` cohorts therefore run with
+    `COGNOSCENTI_ACHIRAL_SETTLE_MS=2000`. The registered cohorts keep 15000. Org-scope confirmation
+    polling is unchanged. The setting is recorded per cohort and the two datasets are never pooled.
+14. **Retrieval-mode and params headers added to the adapter, 2026-11-19.** The `achiral`
+    adapter can now send `x-achiral-retrieval-mode` and `x-achiral-retrieval-params` on every
+    retrieve (`COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE`, `COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS`), for
+    the activation-weight sweeps. It changes nothing for a run that sets neither variable: the
+    request is byte for byte what it was, and the registered cohorts (items 11 to 13) run without
+    them. A run that sets them stops unless the server echoes the same mode and params on the
+    first retrieve of each replicate, records the requested setting and the echo in the results
+    file, and carries the setting in its cohort name, so it is reported beside, never pooled
+    with, a cohort without one. Valid modes are the server's `rerank`, `aggr`, `graph`, `dense`
+    and `hybrid`; `aggr-shadow` is not sent as a header.
