@@ -25,8 +25,9 @@
 //! deliberately - see `retrieve_url`'s doc comment for why that is
 //! correct, not a remaining gap.
 //!
-//! `actor` now decides the retrieve route (an agent actor retrieves from its
-//! own scope; a user actor from the org's) - `recall` has no separate actor
+//! `actor` decides the retrieve routes (an agent actor asks the org route and
+//! its own scope and the results are merged by score, see `retrieve_urls`; a
+//! user actor asks the org route) - `recall` has no separate actor
 //! concept on achiral.ai's public API, so this is purely adapter-side
 //! routing. `now` IS sent, as the `X-Achiral-Eval-Now` header
 //! (`eval_now_header`) - achiral.ai's `recall`/`reinforce` honour it under
@@ -506,6 +507,35 @@ pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
 /// every user actor through its own `/users/:id/retrieve` would need that
 /// id to be a real member too, and would only ever add visibility, never
 /// remove it - the wrong direction for a leak-rate trap.
+/// Every route one question is asked on. The agent route returns agent-scope
+/// notes only, but an org-scope fact can be the answer an agent needs (the
+/// `agent` category's gold is one), so an agent asks the org route as well.
+/// A user asks the org route only.
+pub fn retrieve_urls(base_url: &str, actor: &Actor) -> Vec<String> {
+    let org = format!("{base_url}/v1/memory/retrieve");
+    match actor.kind {
+        ActorKind::Agent => vec![org, retrieve_url(base_url, actor)],
+        ActorKind::User => vec![org],
+    }
+}
+
+/// One ranking from several routes' results: an id keeps its best score,
+/// best score first (a tie keeps the earlier route's order), cut to `top_k`.
+/// Scores come from different routes and are not calibrated against each
+/// other; this is a merge by score, nothing smarter.
+pub fn merge_scored(routes: Vec<Vec<(String, f64)>>, top_k: usize) -> Vec<(String, f64)> {
+    let mut merged: Vec<(String, f64)> = Vec::new();
+    for (id, score) in routes.into_iter().flatten() {
+        match merged.iter_mut().find(|(seen, _)| *seen == id) {
+            Some(entry) => entry.1 = entry.1.max(score),
+            None => merged.push((id, score)),
+        }
+    }
+    merged.sort_by(|a, b| b.1.total_cmp(&a.1));
+    merged.truncate(top_k);
+    merged
+}
+
 pub fn retrieve_url(base_url: &str, actor: &Actor) -> String {
     match actor.kind {
         ActorKind::Agent => format!("{base_url}/v1/memory/agents/{}/retrieve", actor.id),
@@ -1026,22 +1056,22 @@ impl MemorySystem for AchiralHttpSystem {
         now: DateTime<Utc>,
         top_k: usize,
     ) -> Vec<(String, f64)> {
-        let url = retrieve_url(&self.base_url, actor);
         let payload = retrieve_payload(query, top_k);
         let headers = retrieve_headers(&self.retrieval, now);
-        let response = run_json_post(
-            &self.retry,
-            &url,
-            self.api_key.as_deref(),
-            &headers,
-            &payload,
-        )
-        .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
-        self.verify_retrieval(&response);
-        parse_recall_response(&response)
-            .into_iter()
-            .take(top_k)
-            .collect()
+        let mut routes = Vec::new();
+        for url in retrieve_urls(&self.base_url, actor) {
+            let response = run_json_post(
+                &self.retry,
+                &url,
+                self.api_key.as_deref(),
+                &headers,
+                &payload,
+            )
+            .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
+            self.verify_retrieval(&response);
+            routes.push(parse_recall_response(&response));
+        }
+        merge_scored(routes, top_k)
     }
 
     fn evidence_graph_gaps(
@@ -2095,5 +2125,104 @@ mod tests {
         let o = over(Some("dense"), None).unwrap();
         assert!(o.check_echo(&echo(json!({"mode": "dense"}))).is_ok());
         assert!(o.check_echo(&echo(json!({"mode": "rerank"}))).is_err());
+    }
+
+    fn agent(id: &str) -> Actor {
+        Actor {
+            id: id.to_string(),
+            kind: ActorKind::Agent,
+        }
+    }
+
+    // An agent question can be answered by an org-scope fact (the gold of the
+    // `agent` category is one), but the agent route returns agent-scope notes
+    // only, so an agent asks both.
+    #[test]
+    fn an_agent_asks_the_org_route_then_its_own_and_a_user_asks_the_org_route_only() {
+        assert_eq!(
+            retrieve_urls("http://unused", &agent("ops-agent")),
+            vec![
+                "http://unused/v1/memory/retrieve".to_string(),
+                "http://unused/v1/memory/agents/ops-agent/retrieve".to_string(),
+            ]
+        );
+        let user = Actor {
+            id: "bob".to_string(),
+            kind: ActorKind::User,
+        };
+        assert_eq!(
+            retrieve_urls("http://unused", &user),
+            vec!["http://unused/v1/memory/retrieve".to_string()]
+        );
+    }
+
+    fn scored(items: &[(&str, f64)]) -> Vec<(String, f64)> {
+        items.iter().map(|(id, s)| (id.to_string(), *s)).collect()
+    }
+
+    #[test]
+    fn merged_results_are_deduped_by_id_keeping_the_best_score_then_cut_to_top_k() {
+        let org = scored(&[("a", 0.9), ("b", 0.5), ("c", 0.2)]);
+        let agent_notes = scored(&[("d", 0.7), ("b", 0.8)]);
+        assert_eq!(
+            merge_scored(vec![org.clone(), agent_notes.clone()], 10),
+            scored(&[("a", 0.9), ("b", 0.8), ("d", 0.7), ("c", 0.2)])
+        );
+        assert_eq!(
+            merge_scored(vec![org, agent_notes], 2),
+            scored(&[("a", 0.9), ("b", 0.8)])
+        );
+    }
+
+    #[test]
+    fn a_tie_keeps_the_earlier_route_first_and_one_route_passes_through() {
+        let merged = merge_scored(vec![scored(&[("x", 0.5)]), scored(&[("y", 0.5)])], 5);
+        assert_eq!(merged, scored(&[("x", 0.5), ("y", 0.5)]));
+        let one = scored(&[("a", 0.1), ("b", 0.9)]);
+        assert_eq!(
+            merge_scored(vec![one], 5),
+            scored(&[("b", 0.9), ("a", 0.1)])
+        );
+        assert_eq!(merge_scored(vec![], 5), Vec::<(String, f64)>::new());
+        assert_eq!(
+            merge_scored(vec![scored(&[("a", 1.0)])], 0),
+            Vec::<(String, f64)>::new()
+        );
+    }
+
+    // Merging must not hide a leak: the checks run on the merged ids.
+    #[test]
+    fn a_memory_another_agent_owns_still_counts_as_a_leak_in_the_merged_list() {
+        use crate::adapter::leak_trial_flags;
+        use crate::scoring::LeakTrial;
+        let org_scope = Scope {
+            kind: ScopeKind::Org,
+            id: "acme".to_string(),
+        };
+        let other_agent = Scope {
+            kind: ScopeKind::Agent,
+            id: "report-agent".to_string(),
+        };
+        let merged = merge_scored(
+            vec![scored(&[("org-fact", 0.9)]), scored(&[("theirs", 0.8)])],
+            3,
+        );
+        let scope_of = |id: &str| {
+            if id == "theirs" {
+                other_agent.clone()
+            } else {
+                org_scope.clone()
+            }
+        };
+        let trial = |ids: &[&str]| LeakTrial {
+            actor: agent("ops-agent"),
+            returned_scopes: ids.iter().map(|i| scope_of(i)).collect(),
+        };
+        let ids: Vec<&str> = merged.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(ids, vec!["org-fact", "theirs"]);
+        assert_eq!(
+            leak_trial_flags(&[trial(&ids), trial(&["org-fact"])]),
+            vec![true, false]
+        );
     }
 }

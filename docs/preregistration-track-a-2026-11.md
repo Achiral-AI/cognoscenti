@@ -331,3 +331,16 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     every replicate shown) and are not reproducible from the log. The rebuilt file lists replicates
     0 to 4 as loaded from the log, and the report says so in each section it cannot fill. Nothing in
     the cohort run, its logs or its orgs was changed.
+17. **Agent questions ask the org route as well, 2026-11-19.** In every Achiral run so far the
+    `agent` category scored 0 of 70. Its gold fact is an org-scope event (for example
+    `agent-000-e2`, written by `report-agent`) and the question is asked by another agent
+    (`ops-agent`) through `/v1/memory/agents/<slug>/retrieve`, which returns agent-scope notes only;
+    a live check returned 1 result from the org route and 0 from the agent route. The 0 was
+    structural, not a measurement, and so was the category's leak count of 0: that route could not
+    return an org event or another agent's note to the asker. From this change the adapter asks an
+    agent's question on both routes, merges the lists by score (an id keeps its best score),
+    and cuts to top-k; scores from the two routes are not calibrated against each other. Leak
+    accounting is unchanged and runs on the merged list. Agent-category results from the registered
+    cohorts (items 11 to 15) and earlier runs are not comparable with runs that include this change;
+    the other categories are unaffected, because only agent-asked questions change. Those results are
+    kept and reported as run, with this note.

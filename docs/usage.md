@@ -348,6 +348,17 @@ replicate's index in `COGNOSCENTI_ACHIRAL_API_KEYS`. A log from another stream,
 seed, `--top-k` or system is refused. When replicate 0 is already in the log,
 the preliminary report is not printed again; it is in the earlier output.
 
+### Which routes the `achiral` adapter asks
+
+A question asked by a user goes to `/v1/memory/retrieve`. A question asked by an
+agent goes to that route and to `/v1/memory/agents/<slug>/retrieve`, because the
+agent route returns agent-scope notes only while the fact an agent needs may be
+org-scope. The two result lists are merged (an id keeps its best score), sorted
+by score, and cut to top-k. Scores from the two routes are not calibrated against
+each other. Leak and recall are scored on the merged list. Results from runs
+before this change asked the agent route alone and are not comparable on the
+`agent` category.
+
 ### Choosing the retrieval mode and params
 
 An evaluation deployment of achiral.ai (`INFERENCE_EVAL_MODE=true`) lets one run
