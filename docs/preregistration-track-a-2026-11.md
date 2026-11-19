@@ -344,3 +344,14 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     cohorts (items 11 to 15) and earlier runs are not comparable with runs that include this change;
     the other categories are unaffected, because only agent-asked questions change. Those results are
     kept and reported as run, with this note.
+18. **Natural-names cohorts interrupted at replicate 4; resumed, 2026-11-19.** Replicates 0 to 3
+    finished in both natural-names cohorts (09:37Z start, 2 s settle, ~1 h 18 min each). Both
+    processes stopped at about 14:34Z on the first writes of replicate 4 (`settle(): ... not
+    confirmed written within 120000ms`). Cause: host overload. A concurrent cargo test and mutation
+    run on the same machine drove the load average to about 150 on 12 cores; MongoDB and Weaviate
+    timed out (Weaviate 30 s request timeouts, MongoDB connection loss) while the API stayed up.
+    The replicate-4 orgs (`ct4-s0-5`, `ct4-s02-5`) hold partial data and are discarded (outputs
+    under `run3/crashed-natural-1/`, none reported). One first resume attempt failed at startup
+    with a key-list error and wrote no replicate record. Replicate 4 resumed with `--resume` at about
+    14:50Z on fresh orgs `ct7-s0-1` and `ct7-s02-1`, once the load was back under 10. Same binary
+    (`7a6d238`), dataset, flags and 2 s settle. No other CPU-heavy work runs beside cohorts.
