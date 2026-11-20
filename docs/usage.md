@@ -351,13 +351,16 @@ the preliminary report is not printed again; it is in the earlier output.
 ### Which routes the `achiral` adapter asks
 
 A question asked by a user goes to `/v1/memory/retrieve`. A question asked by an
-agent goes to that route and to `/v1/memory/agents/<slug>/retrieve`, because the
+agent goes to `/v1/memory/agents/<slug>/retrieve` and to that route, because the
 agent route returns agent-scope notes only while the fact an agent needs may be
-org-scope. The two result lists are merged (an id keeps its best score), sorted
-by score, and cut to top-k. Scores from the two routes are not calibrated against
-each other. Leak and recall are scored on the merged list. Results from runs
-before this change asked the agent route alone and are not comparable on the
-`agent` category.
+org-scope, or a note private to the agent. The two lists are interleaved rank by
+rank (agent #1, org #1, agent #2, org #2, ...), an id already taken skipped,
+until top-k. The routes' scores are on different scales, so they are never
+compared; an item keeps its own route's score. Leak and recall are scored on the
+interleaved list. Runs before this asked the agent route alone, and runs on the
+first version of the two-route change merged the lists by score and let the org
+pool crowd out a private agent note; neither is comparable with this on the
+`agent` category or on any category whose questions agents ask.
 
 ### Choosing the retrieval mode and params
 

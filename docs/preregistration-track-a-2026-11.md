@@ -355,3 +355,29 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     with a key-list error and wrote no replicate record. Replicate 4 resumed with `--resume` at about
     14:50Z on fresh orgs `ct7-s0-1` and `ct7-s02-1`, once the load was back under 10. Same binary
     (`7a6d238`), dataset, flags and 2 s settle. No other CPU-heavy work runs beside cohorts.
+19. **Activation-weight ablation: starts and the confirm budget, 2026-11-19.** The labelled
+    ablation (`rerank`, `activationWeightScale` 0.25 and 0, natural-names dataset, 543 questions, 3
+    replicates each on fresh orgs, 2 s settle, `--skip-user-scope`, top-k 3) started three times.
+    Start 1 (16:00Z, cognoscenti `7815bbe`) was stopped at about 16:03Z when the adapter flaw in
+    deviation 17 was found; its files are under `ablation/stopped-old-adapter/`. Start 2 (16:03Z,
+    `4240735`, 120 s confirm budget) stopped at 17:13Z, about 70 minutes into replicate 0, on
+    `settle(): ... not confirmed written within 120000ms`; the achiral.ai candidate writer had
+    stalled for 221 s (its usual gap is under 30 s), overlapping conversation-summarization jobs
+    that were calling the model; the files are under `ablation/crashed-2/` and none is reported. Start
+    3 (17:17Z, `4240735`) differs only in `COGNOSCENTI_ACHIRAL_CONFIRM_MS=600000`, which only changes
+    how long a write may stay unconfirmed before the run stops; it changes no query, dataset,
+    metric or scoring rule. The cause of the writer stall is not established.
+20. **The agent-asker merge becomes a rank-by-rank interleave, 2026-11-20.** Deviation 17 merged
+    the agent route and the org route by score. The control cohort of the natural-names dataset
+    (shipped weight, `4240735`, `ablation/natural-control.results.json`) then scored 0.00 on
+    `individual` and on `owner`, against 0.25 and 0.51 with the agent route alone, and overall recall
+    fell from 0.270 to 0.221. The scored `individual` (40) and `owner` (15) questions are all asked by
+    agents, and their gold is a note private to that agent; the dense org pool outscored it and
+    pushed it out of the top 3. The two routes' scores are not on one scale, so a merge by score
+    was the wrong rule. From this change an agent's question takes agent #1, org #1, agent #2,
+    org #2, and so on until top-k, skipping an id already taken, and each item keeps its own
+    route's score. The user-asked path is unchanged, and leak accounting runs on the interleaved
+    list. `natural-control` and the activation-weight ablation cohorts (item 19) ran on the
+    score-merge adapter (`4240735`); they are labelled as such, reported as run, and not pooled with
+    runs on this change. Earlier runs on the agent route alone, and runs on the score merge, are not
+    comparable with later ones on the `agent`, `individual` and `owner` categories.

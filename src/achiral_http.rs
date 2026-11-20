@@ -25,9 +25,9 @@
 //! deliberately - see `retrieve_url`'s doc comment for why that is
 //! correct, not a remaining gap.
 //!
-//! `actor` decides the retrieve routes (an agent actor asks the org route and
-//! its own scope and the results are merged by score, see `retrieve_urls`; a
-//! user actor asks the org route) - `recall` has no separate actor
+//! `actor` decides the retrieve routes (an agent actor asks its own scope and
+//! the org route and the results are interleaved rank by rank, see
+//! `retrieve_urls`; a user actor asks the org route) - `recall` has no separate actor
 //! concept on achiral.ai's public API, so this is purely adapter-side
 //! routing. `now` IS sent, as the `X-Achiral-Eval-Now` header
 //! (`eval_now_header`) - achiral.ai's `recall`/`reinforce` honour it under
@@ -507,33 +507,39 @@ pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
 /// every user actor through its own `/users/:id/retrieve` would need that
 /// id to be a real member too, and would only ever add visibility, never
 /// remove it - the wrong direction for a leak-rate trap.
-/// Every route one question is asked on. The agent route returns agent-scope
-/// notes only, but an org-scope fact can be the answer an agent needs (the
-/// `agent` category's gold is one), so an agent asks the org route as well.
-/// A user asks the org route only.
+/// Every route one question is asked on, the asker's own first. The agent
+/// route returns agent-scope notes only, but the fact an agent needs may be
+/// org-scope (the `agent` category's gold is one) or a note private to it, so
+/// an agent asks both. A user asks the org route only.
 pub fn retrieve_urls(base_url: &str, actor: &Actor) -> Vec<String> {
     let org = format!("{base_url}/v1/memory/retrieve");
     match actor.kind {
-        ActorKind::Agent => vec![org, retrieve_url(base_url, actor)],
+        ActorKind::Agent => vec![retrieve_url(base_url, actor), org],
         ActorKind::User => vec![org],
     }
 }
 
-/// One ranking from several routes' results: an id keeps its best score,
-/// best score first (a tie keeps the earlier route's order), cut to `top_k`.
-/// Scores come from different routes and are not calibrated against each
-/// other; this is a merge by score, nothing smarter.
-pub fn merge_scored(routes: Vec<Vec<(String, f64)>>, top_k: usize) -> Vec<(String, f64)> {
-    let mut merged: Vec<(String, f64)> = Vec::new();
-    for (id, score) in routes.into_iter().flatten() {
-        match merged.iter_mut().find(|(seen, _)| *seen == id) {
-            Some(entry) => entry.1 = entry.1.max(score),
-            None => merged.push((id, score)),
+/// One ranking from several routes: rank 1 of each route in turn, then rank 2
+/// of each, and so on until `top_k`, an id already taken skipped. The routes'
+/// scores are on different scales (a private agent note scores low beside a
+/// dense org pool), so they are never compared; each item keeps the score its
+/// own route gave it.
+pub fn interleave_routes(routes: Vec<Vec<(String, f64)>>, top_k: usize) -> Vec<(String, f64)> {
+    let depth = routes.iter().map(Vec::len).max().unwrap_or(0);
+    let mut taken: Vec<(String, f64)> = Vec::new();
+    for rank in 0..depth {
+        for route in &routes {
+            if taken.len() == top_k {
+                return taken;
+            }
+            if let Some((id, score)) = route.get(rank) {
+                if !taken.iter().any(|(seen, _)| seen == id) {
+                    taken.push((id.clone(), *score));
+                }
+            }
         }
     }
-    merged.sort_by(|a, b| b.1.total_cmp(&a.1));
-    merged.truncate(top_k);
-    merged
+    taken
 }
 
 pub fn retrieve_url(base_url: &str, actor: &Actor) -> String {
@@ -1071,7 +1077,7 @@ impl MemorySystem for AchiralHttpSystem {
             self.verify_retrieval(&response);
             routes.push(parse_recall_response(&response));
         }
-        merge_scored(routes, top_k)
+        interleave_routes(routes, top_k)
     }
 
     fn evidence_graph_gaps(
@@ -2135,15 +2141,15 @@ mod tests {
     }
 
     // An agent question can be answered by an org-scope fact (the gold of the
-    // `agent` category is one), but the agent route returns agent-scope notes
-    // only, so an agent asks both.
+    // `agent` category is one) or by a note private to that agent, so an agent
+    // asks both routes, its own first.
     #[test]
-    fn an_agent_asks_the_org_route_then_its_own_and_a_user_asks_the_org_route_only() {
+    fn an_agent_asks_its_own_route_then_the_org_route_and_a_user_asks_the_org_route_only() {
         assert_eq!(
             retrieve_urls("http://unused", &agent("ops-agent")),
             vec![
-                "http://unused/v1/memory/retrieve".to_string(),
                 "http://unused/v1/memory/agents/ops-agent/retrieve".to_string(),
+                "http://unused/v1/memory/retrieve".to_string(),
             ]
         );
         let user = Actor {
@@ -2160,34 +2166,53 @@ mod tests {
         items.iter().map(|(id, s)| (id.to_string(), *s)).collect()
     }
 
+    fn ids(items: &[(String, f64)]) -> Vec<&str> {
+        items.iter().map(|(id, _)| id.as_str()).collect()
+    }
+
+    // Scores from the two routes are on different scales, so the routes take
+    // turns instead of competing on score.
     #[test]
-    fn merged_results_are_deduped_by_id_keeping_the_best_score_then_cut_to_top_k() {
-        let org = scored(&[("a", 0.9), ("b", 0.5), ("c", 0.2)]);
-        let agent_notes = scored(&[("d", 0.7), ("b", 0.8)]);
-        assert_eq!(
-            merge_scored(vec![org.clone(), agent_notes.clone()], 10),
-            scored(&[("a", 0.9), ("b", 0.8), ("d", 0.7), ("c", 0.2)])
-        );
-        assert_eq!(
-            merge_scored(vec![org, agent_notes], 2),
-            scored(&[("a", 0.9), ("b", 0.8)])
-        );
+    fn gold_only_in_the_agent_pool_stays_in_the_top_three_under_three_higher_scored_org_notes() {
+        let agent_notes = scored(&[("gold", 0.1)]);
+        let org = scored(&[("o1", 0.9), ("o2", 0.8), ("o3", 0.7)]);
+        let merged = interleave_routes(vec![agent_notes, org], 3);
+        assert_eq!(ids(&merged), vec!["gold", "o1", "o2"]);
     }
 
     #[test]
-    fn a_tie_keeps_the_earlier_route_first_and_one_route_passes_through() {
-        let merged = merge_scored(vec![scored(&[("x", 0.5)]), scored(&[("y", 0.5)])], 5);
-        assert_eq!(merged, scored(&[("x", 0.5), ("y", 0.5)]));
-        let one = scored(&[("a", 0.1), ("b", 0.9)]);
+    fn gold_only_in_the_org_pool_stays_in_the_top_three_under_three_higher_scored_agent_notes() {
+        let agent_notes = scored(&[("a1", 0.9), ("a2", 0.8), ("a3", 0.7)]);
+        let org = scored(&[("gold", 0.1)]);
+        let merged = interleave_routes(vec![agent_notes, org], 3);
+        assert_eq!(ids(&merged), vec!["a1", "gold", "a2"]);
+    }
+
+    #[test]
+    fn a_duplicate_id_appears_once_and_each_list_is_walked_on_past_it() {
+        let agent_notes = scored(&[("x", 0.9), ("a2", 0.5)]);
+        let org = scored(&[("x", 0.8), ("o2", 0.4), ("o3", 0.3)]);
+        let merged = interleave_routes(vec![agent_notes, org], 5);
+        assert_eq!(ids(&merged), vec!["x", "a2", "o2", "o3"]);
+        // an item keeps the score its own route gave it
+        assert_eq!(merged[0], ("x".to_string(), 0.9));
+        assert_eq!(merged[2], ("o2".to_string(), 0.4));
+    }
+
+    #[test]
+    fn one_empty_route_still_returns_up_to_k_from_the_other() {
+        let five = scored(&[("a", 0.5), ("b", 0.4), ("c", 0.3), ("d", 0.2), ("e", 0.1)]);
         assert_eq!(
-            merge_scored(vec![one], 5),
-            scored(&[("b", 0.9), ("a", 0.1)])
+            ids(&interleave_routes(vec![vec![], five.clone()], 3)),
+            vec!["a", "b", "c"]
         );
-        assert_eq!(merge_scored(vec![], 5), Vec::<(String, f64)>::new());
         assert_eq!(
-            merge_scored(vec![scored(&[("a", 1.0)])], 0),
-            Vec::<(String, f64)>::new()
+            ids(&interleave_routes(vec![five, vec![]], 3)),
+            vec!["a", "b", "c"]
         );
+        assert!(interleave_routes(vec![vec![], vec![]], 3).is_empty());
+        assert!(interleave_routes(vec![], 3).is_empty());
+        assert!(interleave_routes(vec![scored(&[("a", 1.0)])], 0).is_empty());
     }
 
     // Merging must not hide a leak: the checks run on the merged ids.
@@ -2203,8 +2228,8 @@ mod tests {
             kind: ScopeKind::Agent,
             id: "report-agent".to_string(),
         };
-        let merged = merge_scored(
-            vec![scored(&[("org-fact", 0.9)]), scored(&[("theirs", 0.8)])],
+        let merged = interleave_routes(
+            vec![scored(&[("theirs", 0.8)]), scored(&[("org-fact", 0.9)])],
             3,
         );
         let scope_of = |id: &str| {
@@ -2218,10 +2243,10 @@ mod tests {
             actor: agent("ops-agent"),
             returned_scopes: ids.iter().map(|i| scope_of(i)).collect(),
         };
-        let ids: Vec<&str> = merged.iter().map(|(id, _)| id.as_str()).collect();
-        assert_eq!(ids, vec!["org-fact", "theirs"]);
+        let merged_ids = ids(&merged);
+        assert_eq!(merged_ids, vec!["theirs", "org-fact"]);
         assert_eq!(
-            leak_trial_flags(&[trial(&ids), trial(&["org-fact"])]),
+            leak_trial_flags(&[trial(&merged_ids), trial(&["org-fact"])]),
             vec![true, false]
         );
     }

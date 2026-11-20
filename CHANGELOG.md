@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The `achiral` adapter asks an agent's question on the org route as well as the agent route
-  and merges the results by score, then cuts to top-k. Before, an org-scope gold fact could
+  and interleaves the two lists rank by rank (agent first) up to top-k. A score merge let the
+  dense org pool push a private agent note out of the top 3. Before, an org-scope gold fact could
   never be returned to an agent, so the `agent` category scored 0 (and its zero leak was
   vacuous). Agent-category results from earlier runs are not comparable.
 
