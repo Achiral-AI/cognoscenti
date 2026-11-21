@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vacuous). Agent-category results from earlier runs are not comparable.
 
 ### Added
+- Use-learning study support (Plan 40 Stage 5): `--generate-use-learning` writes the stream
+  (`src/use_learning.rs`); `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1` makes the `achiral` adapter reinforce
+  each retrieved gold memory after a question; the `usecount` baseline (bm25 top 20, near-ties by
+  reported use count); `use_count` on result rows; `use_curves` (per-bin recall, paired
+  differences, the registered decision rule); a "Recall by use bin" report section with verdicts
+  against the `off` arm (the cohort with `activationWeightScale` 0) and `usecount`; and
+  `examples/run-use-learning-arm.sh` to run one registered arm.
 - `cognoscenti rebuild-results` rebuilds a complete cohort results file from a replicate log and
   the stream, for a run whose own results were lost to a crash. It fills per-question, pooled and
   per-category recall and the flip rate, checks printed summary lines against the log, refuses

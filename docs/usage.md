@@ -362,6 +362,15 @@ first version of the two-route change merged the lists by score and let the org
 pool crowd out a private agent note; neither is comparable with this on the
 `agent` category or on any category whose questions agents ask.
 
+### Use feedback and the use-learning arms
+
+`COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1` makes the `achiral` adapter declare `use_feedback`: after each
+question the replay loop reports the retrieved gold memories as used, and the adapter sends
+`POST /v1/memory/{id}/reinforce` (with the simulated clock). The token needs `memory:control`. Any
+other value sends nothing. `usecount` (a local baseline, `--systems usecount`) counts the same
+reports. `examples/run-use-learning-arm.sh <arm> <stream> <out-prefix>` runs one arm of
+`docs/preregistration-use-learning-2026-11.md`; `report` then adds a "Recall by use bin" section.
+
 ### Choosing the retrieval mode and params
 
 An evaluation deployment of achiral.ai (`INFERENCE_EVAL_MODE=true`) lets one run
