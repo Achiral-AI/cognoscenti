@@ -27,11 +27,12 @@ pub fn build_baseline(
     match name {
         "verbatim" => Ok(Box::new(VerbatimSystem::new())),
         "bm25" => Ok(Box::new(Bm25System::new())),
+        "usecount" => Ok(Box::new(UseCountSystem::new())),
         "recency" => Ok(Box::new(RecencySystem::new(recency_half_life_days))),
         "full-context" => Ok(Box::new(FullContextSystem::new())),
         "bounded-window" => Ok(Box::new(BoundedWindowSystem::new(bounded_window_size))),
         _ => Err(anyhow::anyhow!(
-            "unknown baseline: {name} (expected verbatim, bm25, recency, full-context, or bounded-window)"
+            "unknown baseline: {name} (expected verbatim, bm25, usecount, recency, full-context, or bounded-window)"
         )),
     }
 }
@@ -233,6 +234,101 @@ impl MemorySystem for Bm25System {
             .into_iter()
             .take(top_k)
             .collect()
+    }
+}
+
+/// How many top bm25 candidates `UseCountSystem` considers, and how close to
+/// the top score a candidate must be to count as a near-tie. Registered in
+/// `preregistration-use-learning-2026-11.md`; not tuned.
+const USECOUNT_CANDIDATES: usize = 20;
+const USECOUNT_TIE_WINDOW: f64 = 0.10;
+
+/// bm25 plus plain counting: among the top candidates within 10% of the best
+/// score, the one reported as used more often goes first. The control for
+/// "does ACT-R beat counting", with no decay and no parameter beyond the two
+/// registered constants. A use is a `use_feedback(.., true)` report.
+pub struct UseCountSystem {
+    bm25: Bm25System,
+    uses: HashMap<String, u32>,
+}
+
+impl UseCountSystem {
+    pub fn new() -> Self {
+        Self {
+            bm25: Bm25System::new(),
+            uses: HashMap::new(),
+        }
+    }
+}
+
+impl Default for UseCountSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MemorySystem for UseCountSystem {
+    fn name(&self) -> &str {
+        "usecount"
+    }
+
+    fn ingest(&mut self, event: &StreamEvent) {
+        self.bm25.ingest(event);
+    }
+
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        self.retrieve_scored(query, actor, now, top_k)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    fn retrieve_scored(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
+        let candidates = self
+            .bm25
+            .retrieve_scored(query, actor, now, USECOUNT_CANDIDATES);
+        let Some(&(_, top)) = candidates.first() else {
+            return candidates;
+        };
+        let window = candidates
+            .iter()
+            .take_while(|(_, score)| *score >= top * (1.0 - USECOUNT_TIE_WINDOW))
+            .count();
+        let (mut near_ties, rest) = {
+            let mut head = candidates;
+            let rest = head.split_off(window);
+            (head, rest)
+        };
+        // Stable: equal counts keep bm25's order.
+        near_ties.sort_by_key(|(id, _)| std::cmp::Reverse(self.uses.get(id).copied().unwrap_or(0)));
+        near_ties.into_iter().chain(rest).take(top_k).collect()
+    }
+
+    fn capabilities(&self) -> crate::adapter::Capabilities {
+        crate::adapter::Capabilities {
+            use_feedback: true,
+            ..Default::default()
+        }
+    }
+
+    fn use_feedback(&mut self, memory_ids: &[String], helpful: bool) {
+        if helpful {
+            for id in memory_ids {
+                *self.uses.entry(id.clone()).or_insert(0) += 1;
+            }
+        }
     }
 }
 
@@ -604,5 +700,95 @@ mod tests {
 
         let retrieved = system.retrieve("ignored", &any_actor(), now, 1);
         assert_eq!(retrieved, vec!["e1"]);
+    }
+
+    fn used(system: &mut UseCountSystem, id: &str, times: usize) {
+        for _ in 0..times {
+            system.use_feedback(&[id.to_string()], true);
+        }
+    }
+
+    fn usecount_fixture() -> UseCountSystem {
+        let mut system = UseCountSystem::new();
+        system.ingest(&event("e1", "cat", "2026-01-01T00:00:00Z"));
+        system.ingest(&event("e2", "cat", "2026-01-01T00:00:00Z"));
+        system.ingest(&event(
+            "e3",
+            "cat with many other words that dilute the match today",
+            "2026-01-01T00:00:00Z",
+        ));
+        system
+    }
+
+    fn ask(system: &mut UseCountSystem) -> Vec<String> {
+        system.retrieve(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            3,
+        )
+    }
+
+    #[test]
+    fn usecount_without_any_use_is_bm25() {
+        let mut system = usecount_fixture();
+        let mut bm25 = Bm25System::new();
+        for id in ["e1", "e2"] {
+            bm25.ingest(&event(id, "cat", "2026-01-01T00:00:00Z"));
+        }
+        bm25.ingest(&event(
+            "e3",
+            "cat with many other words that dilute the match today",
+            "2026-01-01T00:00:00Z",
+        ));
+        let expected = bm25.retrieve(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            3,
+        );
+        assert_eq!(ask(&mut system), expected);
+    }
+
+    #[test]
+    fn usecount_puts_the_more_used_of_two_near_ties_first() {
+        let mut system = usecount_fixture();
+        assert_eq!(ask(&mut system)[0], "e1");
+        used(&mut system, "e2", 1);
+        assert_eq!(ask(&mut system)[..2], ["e2", "e1"]);
+    }
+
+    #[test]
+    fn usecount_never_promotes_a_document_outside_the_ten_percent_window() {
+        let mut system = usecount_fixture();
+        let scored = system.bm25.retrieve_scored(
+            "cat",
+            &any_actor(),
+            "2026-02-01T00:00:00Z".parse().unwrap(),
+            3,
+        );
+        assert!(
+            scored[2].1 < 0.9 * scored[0].1,
+            "fixture must put e3 outside the window"
+        );
+        used(&mut system, "e3", 50);
+        assert_eq!(ask(&mut system)[2], "e3");
+    }
+
+    #[test]
+    fn usecount_ignores_an_unhelpful_report_and_declares_the_capability() {
+        let mut system = usecount_fixture();
+        system.use_feedback(&["e2".to_string()], false);
+        assert_eq!(ask(&mut system)[0], "e1");
+        assert!(system.capabilities().use_feedback);
+        assert_eq!(system.name(), "usecount");
+    }
+
+    #[test]
+    fn usecount_is_a_known_baseline() {
+        assert_eq!(
+            build_baseline("usecount", 30.0, 10).unwrap().name(),
+            "usecount"
+        );
     }
 }
