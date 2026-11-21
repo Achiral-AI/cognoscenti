@@ -39,7 +39,7 @@ one of four wordings (the original and three fixed rewordings) uniformly from th
 seed, so the use-count curve is not confounded with wording and reworded asks are reported apart
 from original-wording asks.
 
-Questions are scheduled over the 90 days with exponential gaps drawn from the generator seed, so
+Questions are scheduled over the 90 days at times drawn uniformly from the generator seed and sorted (a Poisson process given its count), so
 the time between uses varies and decay has something to act on. A question is placed after every
 event it may depend on.
 
