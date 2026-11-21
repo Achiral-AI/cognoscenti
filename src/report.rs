@@ -1727,7 +1727,7 @@ struct UseCurve {
 
 /// Recall (y from 0 to 1) by use bin (categorical x), with each point's 95%
 /// interval as a whisker.
-fn use_curve_svg(curves: &[UseCurve]) -> String {
+fn use_curve_svg(curves: &[UseCurve], top_k: usize) -> String {
     let (h, left, right, top, bottom) = (260.0, 44.0, 380.0, 12.0, 44.0);
     let px = |bin: usize| {
         left + (right - left) * (bin as f64 + 0.5) / crate::use_curves::BINS.len() as f64
@@ -1753,7 +1753,7 @@ fn use_curve_svg(curves: &[UseCurve]) -> String {
     }
     let _ = write!(
         body,
-        r#"<text class="tick" x="{:.1}" y="{:.1}" text-anchor="middle">earlier asks of the same fact</text><text class="tick" x="10" y="{:.1}" transform="rotate(-90 10 {:.1})" text-anchor="middle">recall@3</text>"#,
+        r#"<text class="tick" x="{:.1}" y="{:.1}" text-anchor="middle">earlier asks of the same fact</text><text class="tick" x="10" y="{:.1}" transform="rotate(-90 10 {:.1})" text-anchor="middle">recall@{top_k}</text>"#,
         (left + right) / 2.0,
         h - 6.0,
         (top + h - bottom) / 2.0,
@@ -1900,7 +1900,7 @@ fn use_section(series: &[Series<'_>]) -> String {
         h,
         r#"{}<div class="card">{}</div>"#,
         legend(&with),
-        use_curve_svg(&curves)
+        use_curve_svg(&curves, with[0].cohort.run.top_k)
     );
     let mut headers = vec!["Use bin"];
     let names: Vec<String> = with.iter().map(|s| s.name()).collect();
@@ -3323,5 +3323,16 @@ mod tests {
         let html = render_html(&cohorts[1..]);
         assert!(html.contains("No off arm"));
         assert!(!html.contains("improves with use"));
+    }
+
+    #[test]
+    fn the_use_chart_axis_names_the_runs_top_k() {
+        let mut cohorts = use_cohorts(36);
+        for c in &mut cohorts {
+            c.run.top_k = 1;
+        }
+        let html = render_html(&cohorts);
+        assert!(html.contains(">recall@1<"));
+        assert!(!html.contains(">recall@3<"));
     }
 }
