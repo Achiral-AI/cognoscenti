@@ -1297,6 +1297,7 @@ pub fn render_html(cohorts: &[RunFile]) -> String {
     );
     h.push_str(&manifest_section(cohorts));
     h.push_str(&recall_section(&series));
+    h.push_str(&use_section(&series));
     h.push_str(&flip_section(&series));
     h.push_str(&with_rebuilt_note(calibration_section(&series), &series));
     h.push_str(&with_rebuilt_note(cycles_section(&series), &series));
@@ -1712,6 +1713,212 @@ fn cycles_section(series: &[Series<'_>]) -> String {
         legend(&with),
         cycles_svg(&data)
     );
+    h
+}
+
+/// One arm's recall on `pop` questions by use bin, for the curve chart.
+struct UseCurve {
+    class: String,
+    shape: usize,
+    strong: bool,
+    /// (bin index, recall); bins too small to plot are absent.
+    pts: Vec<(usize, Stat)>,
+}
+
+/// Recall (y from 0 to 1) by use bin (categorical x), with each point's 95%
+/// interval as a whisker.
+fn use_curve_svg(curves: &[UseCurve]) -> String {
+    let (h, left, right, top, bottom) = (260.0, 44.0, 380.0, 12.0, 44.0);
+    let px = |bin: usize| {
+        left + (right - left) * (bin as f64 + 0.5) / crate::use_curves::BINS.len() as f64
+    };
+    let py = |v: f64| h - bottom - (h - bottom - top) * v.clamp(0.0, 1.0);
+    let mut body = String::new();
+    for v in [0.0, 0.5, 1.0] {
+        let _ = write!(
+            body,
+            r#"<line class="grid" x1="{left}" y1="{y:.1}" x2="{right}" y2="{y:.1}"/><text class="tick" x="{:.1}" y="{:.1}" text-anchor="end">{v:.1}</text>"#,
+            left - 5.0,
+            py(v) + 4.0,
+            y = py(v)
+        );
+    }
+    for (i, bin) in crate::use_curves::BINS.iter().enumerate() {
+        let _ = write!(
+            body,
+            r#"<text class="tick" x="{:.1}" y="{:.1}" text-anchor="middle">{bin}</text>"#,
+            px(i),
+            py(0.0) + 14.0
+        );
+    }
+    let _ = write!(
+        body,
+        r#"<text class="tick" x="{:.1}" y="{:.1}" text-anchor="middle">earlier asks of the same fact</text><text class="tick" x="10" y="{:.1}" transform="rotate(-90 10 {:.1})" text-anchor="middle">recall@3</text>"#,
+        (left + right) / 2.0,
+        h - 6.0,
+        (top + h - bottom) / 2.0,
+        (top + h - bottom) / 2.0
+    );
+    for c in curves {
+        let line: Vec<String> = c
+            .pts
+            .iter()
+            .map(|(b, st)| format!("{:.1},{:.1}", px(*b), py(st.estimate)))
+            .collect();
+        let _ = write!(
+            body,
+            r#"<g class="s {}"><polyline class="line" points="{}"/>"#,
+            c.class,
+            line.join(" ")
+        );
+        for (b, st) in &c.pts {
+            if let Some([lo, hi]) = st.ci {
+                let _ = write!(
+                    body,
+                    r#"<line class="line" x1="{x:.1}" y1="{:.1}" x2="{x:.1}" y2="{:.1}"/>"#,
+                    py(lo),
+                    py(hi),
+                    x = px(*b)
+                );
+            }
+            body.push_str(&marker(c.shape, px(*b), py(st.estimate), c.strong));
+        }
+        body.push_str("</g>");
+    }
+    format!(
+        r#"<svg viewBox="0 0 {W} {h}" role="img" aria-label="Recall by use bin on popular questions"><title>Recall by use bin on popular questions</title>{body}</svg>"#
+    )
+}
+
+/// An arm with the activation term switched off: the same store and clock
+/// with ACT-R out of the ranking, the baseline the use claims are made
+/// against.
+fn is_off(series: &Series<'_>) -> bool {
+    series.is_achiral()
+        && series
+            .cohort
+            .run
+            .retrieval
+            .as_ref()
+            .and_then(|r| r.params.as_ref())
+            .and_then(|p| p.get("activationWeightScale"))
+            .and_then(serde_json::Value::as_f64)
+            == Some(0.0)
+}
+
+fn use_verdict_lines(s: &Series<'_>, base: &Series<'_>, base_name: &str) -> Vec<(String, String)> {
+    let v = crate::use_curves::judge(&s.sys.questions, &base.sys.questions, s.cohort.run.seed);
+    let mut out = Vec::new();
+    if v.improves_with_use {
+        out.push((
+            "win".to_string(),
+            format!(
+                "{} improves with use against {base_name}: the curves cross as registered.",
+                s.name()
+            ),
+        ));
+    } else {
+        out.push((
+            String::new(),
+            format!(
+                "{}: no claim of improvement with use against {base_name} ({}).",
+                s.name(),
+                v.notes.join("; ")
+            ),
+        ));
+    }
+    for category in &v.harms {
+        out.push((
+            "loss".to_string(),
+            format!(
+                "{} loses on {category} against {base_name}: the paired 95% interval is entirely below zero.",
+                s.name()
+            ),
+        ));
+    }
+    out
+}
+
+fn use_section(series: &[Series<'_>]) -> String {
+    let with: Vec<&Series<'_>> = series
+        .iter()
+        .filter(|s| s.sys.questions.iter().any(|q| q.use_count.is_some()))
+        .collect();
+    if with.is_empty() {
+        return String::new();
+    }
+    let mut h = String::from(r#"<section id="use"><h2>Recall by use bin</h2>"#);
+    let same_stream =
+        |a: &Series<'_>, b: &Series<'_>| a.cohort.run.stream_sha256 == b.cohort.run.stream_sha256;
+    let off = with.iter().copied().find(|s| is_off(s));
+    let usecount = with.iter().copied().find(|s| s.sys.system == "usecount");
+    match off {
+        None => h.push_str(&headline(
+            "",
+            "No off arm in these files, so no comparison with use is made.",
+        )),
+        Some(off) => {
+            for s in with.iter().filter(|s| s.is_achiral() && !is_off(s)) {
+                if !same_stream(s, off) {
+                    continue;
+                }
+                for (class, line) in use_verdict_lines(s, off, "off") {
+                    h.push_str(&headline(&class, &line));
+                }
+            }
+        }
+    }
+    if let Some(counter) = usecount {
+        for s in with.iter().filter(|s| s.is_achiral() && !is_off(s)) {
+            if same_stream(s, counter) {
+                for (_, line) in use_verdict_lines(s, counter, "usecount") {
+                    h.push_str(&format!(r#"<p class="muted">{}</p>"#, esc(&line)));
+                }
+            }
+        }
+    }
+    let seed = with[0].cohort.run.seed;
+    let bins: Vec<Vec<crate::use_curves::BinStat>> = with
+        .iter()
+        .map(|s| crate::use_curves::bin_stats(&s.sys.questions, "pop", seed))
+        .collect();
+    let curves: Vec<UseCurve> = with
+        .iter()
+        .zip(&bins)
+        .map(|(s, b)| UseCurve {
+            class: s.class.clone(),
+            shape: s.shape,
+            strong: s.is_achiral(),
+            pts: b
+                .iter()
+                .enumerate()
+                .filter_map(|(i, bs)| bs.stat.clone().map(|st| (i, st)))
+                .collect(),
+        })
+        .collect();
+    let _ = write!(
+        h,
+        r#"{}<div class="card">{}</div>"#,
+        legend(&with),
+        use_curve_svg(&curves)
+    );
+    let mut headers = vec!["Use bin"];
+    let names: Vec<String> = with.iter().map(|s| s.name()).collect();
+    headers.extend(names.iter().map(String::as_str));
+    h.push_str(&table_open(&headers));
+    for (i, bin) in crate::use_curves::BINS.iter().enumerate() {
+        let _ = write!(h, "<tr><td>{bin}</td>");
+        for b in &bins {
+            let cell = match &b[i].stat {
+                Some(st) => describe(st),
+                None => format!("n too small (n={})", b[i].n),
+            };
+            let _ = write!(h, "<td>{}</td>", esc(&cell));
+        }
+        h.push_str("</tr>");
+    }
+    h.push_str("</tbody></table></div>");
+    h.push_str(r#"<p class="muted">Popular questions only (one correct fact asked about repeatedly). Use count is earlier asks of the same fact. In the Achiral arms recall itself still reinforces what it returns, so an arm without explicit feedback has no explicit reinforce call, not no reinforcement. Paired comparisons use replicate 0.</p></section>"#);
     h
 }
 
@@ -3035,5 +3242,86 @@ mod tests {
             .unwrap();
         assert_eq!(legend.matches("pt big").count(), 1, "only Achiral is large");
         assert_eq!(legend.matches("<li>").count(), 2);
+    }
+
+    fn use_system(name: &str, blocks: &[(&str, usize, usize, usize)]) -> SystemResults {
+        // (category, use_count, n, hits)
+        let mut out = SystemResults::empty(name);
+        let mut k = 0;
+        for (category, use_count, n, hits) in blocks {
+            for i in 0..*n {
+                out.questions.push(crate::results::QuestionRow {
+                    id: format!("{category}-{k:03}-q"),
+                    category: Some(category.to_string()),
+                    recall: if i < *hits { 1.0 } else { 0.0 },
+                    tokens: None,
+                    use_count: Some(*use_count),
+                });
+                k += 1;
+            }
+        }
+        out.recall = Some(Stat::from_values(
+            &out.questions.iter().map(|q| q.recall).collect::<Vec<_>>(),
+            0,
+        ));
+        out
+    }
+
+    fn off_setting() -> crate::results::RetrievalSetting {
+        crate::results::RetrievalSetting {
+            mode: None,
+            params: Some(serde_json::json!({"activationWeightScale": 0})),
+            echoed: None,
+        }
+    }
+
+    fn use_cohorts(shipped_top_hits: usize) -> Vec<RunFile> {
+        let off = use_system(
+            "achiral",
+            &[("pop", 0, 40, 20), ("pop", 8, 40, 20), ("pop", 1, 5, 2)],
+        );
+        let shipped = use_system(
+            "achiral",
+            &[
+                ("pop", 0, 40, 20),
+                ("pop", 8, 40, shipped_top_hits),
+                ("pop", 1, 5, 4),
+            ],
+        );
+        let mut off_file = cohort(Some("off"), "sha-u", vec![off]);
+        off_file.run.retrieval = Some(off_setting());
+        vec![off_file, cohort(Some("shipped"), "sha-u", vec![shipped])]
+    }
+
+    #[test]
+    fn a_report_without_use_counts_has_no_use_section() {
+        assert!(!render_html(&fixture()).contains(r#"id="use""#));
+    }
+
+    #[test]
+    fn the_use_section_lists_bins_marks_small_ones_and_states_the_verdict() {
+        let html = render_html(&use_cohorts(36));
+        assert!(html.contains(r#"id="use""#));
+        assert!(html.contains("Recall by use bin"));
+        assert!(html.contains("7+"));
+        assert!(html.contains("n too small (n=5)"));
+        assert!(html.contains("improves with use against off"), "{html}");
+        assert!(html.contains("recall itself still reinforces"));
+        assert!(ensure_clean(&html).is_ok());
+    }
+
+    #[test]
+    fn a_flat_arm_gets_no_improvement_claim_and_says_why() {
+        let html = render_html(&use_cohorts(20));
+        assert!(html.contains("no claim of improvement with use against off"));
+        assert!(!html.contains("improves with use against off"));
+    }
+
+    #[test]
+    fn without_an_off_arm_the_section_says_the_comparison_cannot_be_made() {
+        let cohorts = use_cohorts(36);
+        let html = render_html(&cohorts[1..]);
+        assert!(html.contains("No off arm"));
+        assert!(!html.contains("improves with use"));
     }
 }

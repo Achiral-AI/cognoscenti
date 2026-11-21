@@ -115,7 +115,7 @@ pub fn judge(arm: &[QuestionRow], base: &[QuestionRow], seed: u64) -> Verdict {
     let top = paired_diff(arm, base, pop_in("7+"), seed);
     let mut notes = Vec::new();
 
-    let underpowered = top.as_ref().map_or(true, |d| d.n < PRIMARY_MIN_N);
+    let underpowered = top.as_ref().is_none_or(|d| d.n < PRIMARY_MIN_N);
     if underpowered {
         notes.push(format!(
             "underpowered: fewer than {PRIMARY_MIN_N} pop questions in the 7+ bin"
