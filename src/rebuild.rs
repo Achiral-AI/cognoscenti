@@ -178,6 +178,7 @@ pub fn rebuild_cohort(input: &RebuildInput<'_>) -> Result<RunFile> {
     let outcomes: Vec<Vec<bool>> = (0..questions.len())
         .map(|q| indices.iter().map(|r| state.finished[r][q]).collect())
         .collect();
+    let counts = crate::use_learning::use_counts(&stream);
     let rows: Vec<QuestionRow> = questions
         .iter()
         .zip(&outcomes)
@@ -186,6 +187,7 @@ pub fn rebuild_cohort(input: &RebuildInput<'_>) -> Result<RunFile> {
             category: category_of(&q.id).map(str::to_string),
             recall: passes.iter().filter(|p| **p).count() as f64 / replicates as f64,
             tokens: None,
+            use_count: crate::results::use_count_of(&counts, &q.id),
         })
         .collect();
     let recalls: Vec<f64> = rows.iter().map(|r| r.recall).collect();

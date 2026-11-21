@@ -465,7 +465,10 @@ pub fn use_counts(stream: &Stream) -> HashMap<String, usize> {
     let mut seen: HashMap<&str, usize> = HashMap::new();
     let mut out = HashMap::new();
     for q in stream.questions() {
-        let n = seen.entry(q.gold_event_ids[0].as_str()).or_default();
+        let Some(gold) = q.gold_event_ids.first() else {
+            continue;
+        };
+        let n = seen.entry(gold.as_str()).or_default();
         out.insert(q.id.clone(), *n);
         *n += 1;
     }
@@ -473,6 +476,9 @@ pub fn use_counts(stream: &Stream) -> HashMap<String, usize> {
 }
 
 /// The registered use bins: 0 (first ask), 1-2, 3-6, 7+.
+/// Question-id categories of a use-learning stream.
+pub const CATEGORIES: [&str; 5] = ["pop", "rare-d", "rare-c", "change", "tail"];
+
 pub fn use_bin(count: usize) -> &'static str {
     match count {
         0 => "0",
@@ -853,5 +859,14 @@ mod tests {
         assert_eq!(loaded.questions().count(), 585);
         assert!(crate::lint::lint_stream_file(path).unwrap().is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn use_counts_skips_a_question_with_no_gold_instead_of_panicking() {
+        let stream = Stream::from_jsonl(
+            r#"{"kind":"question","id":"scope-000-q","query":"x","asked_at":"2026-01-02T00:00:00Z","asked_by":{"id":"a","kind":"user"},"gold_event_ids":[]}"#,
+        )
+        .unwrap();
+        assert!(use_counts(&stream).is_empty());
     }
 }

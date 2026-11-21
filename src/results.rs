@@ -97,6 +97,10 @@ pub struct QuestionRow {
     /// retrieved content.
     #[serde(default)]
     pub tokens: Option<usize>,
+    /// Earlier asks of this question's gold event (use-learning streams
+    /// only); the x axis of the use curves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -291,6 +295,7 @@ impl SystemResults {
         seed: u64,
     ) -> SystemResults {
         let mut out = SystemResults::empty(system);
+        let counts = crate::use_learning::use_counts(stream);
         out.questions = results
             .iter()
             .map(|r| QuestionRow {
@@ -298,6 +303,7 @@ impl SystemResults {
                 category: category_of(&r.question_id).map(str::to_string),
                 recall: r.recall_at_k,
                 tokens: Some(r.tokens_injected),
+                use_count: use_count_of(&counts, &r.question_id),
             })
             .collect();
         let recalls: Vec<f64> = results.iter().map(|r| r.recall_at_k).collect();
@@ -314,6 +320,19 @@ impl SystemResults {
         out.leaks = leak_stats(stream, results, seed);
         out
     }
+}
+
+/// A question's use count, for the use-learning categories only: the
+/// number means nothing on any other stream.
+pub(crate) fn use_count_of(
+    counts: &std::collections::HashMap<String, usize>,
+    question_id: &str,
+) -> Option<usize> {
+    let category = category_of(question_id)?;
+    crate::use_learning::CATEGORIES
+        .contains(&category)
+        .then(|| counts.get(question_id).copied())
+        .flatten()
 }
 
 /// Recall per generated category (`(question id, recall)` rows in stream
@@ -821,5 +840,45 @@ mod tests {
         assert_eq!(names, vec!["scope", "agent"]);
         assert_eq!(rows[0].stat.events, Some(0));
         assert_eq!(rows[1].stat.events, Some(1));
+    }
+
+    fn use_stream() -> Stream {
+        let q = |id: &str, gold: &str| {
+            format!(
+                r#"{{"kind":"question","id":"{id}","query":"x","asked_at":"2026-01-02T00:00:00Z","asked_by":{{"id":"a","kind":"user"}},"gold_event_ids":[{gold}]}}"#
+            )
+        };
+        let event = r#"{"kind":"event","id":"g1","content":"c","timestamp":"2026-01-01T00:00:00Z","actor":{"id":"a","kind":"user"},"scope":{"kind":"org","id":"o"},"source":"t"}"#;
+        Stream::from_jsonl(
+            &[
+                event.to_string(),
+                q("pop-000-q", r#""g1""#),
+                q("pop-001-q", r#""g1""#),
+                q("scope-000-q", ""),
+                q("hand-made-q", r#""g1""#),
+            ]
+            .join("\n"),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn from_replay_records_the_use_count_of_use_learning_questions_only() {
+        let results = vec![
+            result("pop-000-q", 1.0, 1),
+            result("pop-001-q", 1.0, 1),
+            result("scope-000-q", 1.0, 1),
+            result("hand-made-q", 1.0, 1),
+        ];
+        let out = SystemResults::from_replay("achiral", &use_stream(), &results, 0);
+        let counts: Vec<Option<usize>> = out.questions.iter().map(|r| r.use_count).collect();
+        assert_eq!(counts, vec![Some(0), Some(1), None, None]);
+    }
+
+    #[test]
+    fn a_row_without_a_use_count_loads_from_an_older_file() {
+        let row: QuestionRow =
+            serde_json::from_str(r#"{"id":"pop-000-q","category":"pop","recall":1.0}"#).unwrap();
+        assert_eq!(row.use_count, None);
     }
 }
