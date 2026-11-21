@@ -381,3 +381,15 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     score-merge adapter (`4240735`); they are labelled as such, reported as run, and not pooled with
     runs on this change. Earlier runs on the agent route alone, and runs on the score merge, are not
     comparable with later ones on the `agent`, `individual` and `owner` categories.
+21. **Natural-names cohorts on the interleaved adapter, started 2026-11-21T18:53:08Z.** The
+    natural-names dataset (543 kept questions, sha256 `b3e7ba72…881c`, `--skip-user-scope`, top-k 3,
+    seed 0) runs as two labelled cohorts, `interleave activationNoiseScale=0` and
+    `interleave activationNoiseScale=0.2`, 5 replicates each, on fresh orgs `ct9-i0-1` to `-5` and
+    `ct9-i02-1` to `-5` (`rerank`, agents `report-agent`, `scribe-agent`, `triage-agent` and
+    `ops-agent`), with Cognoscenti `3a76bf1` (deviation 20: an agent's question interleaves the
+    agent and org routes rank by rank), 2 s blind settle, 10 min confirm budget
+    (`COGNOSCENTI_ACHIRAL_CONFIRM_MS=600000`), no retrieval-mode or params headers, per-replicate log,
+    results JSON. The achiral.ai build under test is `feat/benchmarks` at `42326dc8` (includes main's
+    PR #228 squash), working tree clean; its later commit `e9a6eb65` is not in the running API, on
+    purpose. The earlier natural-names cohorts (score-merge `4240735`, `natural-control` and the
+    ablation) and the registered-dataset cohorts are reported as run and are never pooled with these.
