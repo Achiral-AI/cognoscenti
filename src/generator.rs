@@ -32,13 +32,13 @@ pub enum Profile {
 /// Natural words only, so no project carries a coined token. Every word is
 /// shared by about 25 projects; only the pair is unique. None collides with a
 /// slot value (`monthly`, `quarterly`, `annual`) or a lint marker.
-const NATURAL_ADJECTIVES: &[&str] = &[
+pub(crate) const NATURAL_ADJECTIVES: &[&str] = &[
     "Northern", "Southern", "Eastern", "Western", "Central", "Coastal", "Urban", "Rural", "Mobile",
     "Digital", "Global", "Local", "Regional", "Public", "Private", "Shared", "Open", "Rapid",
     "Smart", "Secure", "Unified", "Modern", "Classic", "Premium", "Basic", "Advanced", "Hybrid",
     "Remote", "Internal", "External", "Bright", "Swift", "Prime", "Lean", "Priority", "Express",
 ];
-const NATURAL_NOUNS: &[&str] = &[
+pub(crate) const NATURAL_NOUNS: &[&str] = &[
     "Portal",
     "Dashboard",
     "Gateway",
@@ -202,7 +202,7 @@ impl GeneratorConfig {
 
 // Word lists avoid every `lint::ANSWER_REVEALING_MARKERS` substring (note
 // "concurrent" and "current" collide), so the lint can stay a hard gate.
-const USERS: &[&str] = &[
+pub(crate) const USERS: &[&str] = &[
     "ada", "ben", "chen", "dara", "eli", "fay", "gus", "hana", "ivan", "jo", "kai", "lena",
 ];
 const AGENTS: &[&str] = &["scribe-agent", "triage-agent", "ops-agent", "report-agent"];
@@ -223,13 +223,13 @@ const SUFFIXES: &[&str] = &[
 /// A fact slot: how it is named in events, how a question may rephrase it
 /// (so a query shares only the project name, not every term, with the
 /// event) and the values it can take.
-struct Attribute {
-    name: &'static str,
-    alias: &'static str,
-    values: &'static [&'static str],
+pub(crate) struct Attribute {
+    pub(crate) name: &'static str,
+    pub(crate) alias: &'static str,
+    pub(crate) values: &'static [&'static str],
 }
 
-const ATTRIBUTES: &[Attribute] = &[
+pub(crate) const ATTRIBUTES: &[Attribute] = &[
     Attribute {
         name: "storage engine",
         alias: "database",

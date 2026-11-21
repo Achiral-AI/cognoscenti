@@ -34,6 +34,12 @@ pub struct BenchmarkConfig {
     #[clap(long)]
     pub generate_stream: Option<String>,
 
+    /// Generate the use-learning stream (`docs/use-learning-stream.md`) at
+    /// this path with `--seed` (the registered seeds are 17 for tuning and
+    /// 4242 for the report), lint it and print its SHA-256, then exit.
+    #[clap(long)]
+    pub generate_use_learning: Option<String>,
+
     /// Scope/leak trials in a generated stream. ~300 are needed before a
     /// "<1%" leak claim (3/n bound).
     #[clap(long, default_value = "300")]
@@ -158,6 +164,23 @@ mod tests {
         let config = BenchmarkConfig::parse_from(["cognoscenti", "--generate-stream", "out.jsonl"]);
         assert_eq!(config.generate_stream.as_deref(), Some("out.jsonl"));
         assert_eq!((config.scope_trials, config.items_per_category), (300, 70));
+    }
+
+    #[test]
+    fn the_use_learning_stream_is_generated_only_when_asked_for() {
+        assert_eq!(
+            BenchmarkConfig::parse_from(["cognoscenti"]).generate_use_learning,
+            None
+        );
+        let on = BenchmarkConfig::parse_from([
+            "cognoscenti",
+            "--generate-use-learning",
+            "out.jsonl",
+            "--seed",
+            "4242",
+        ]);
+        assert_eq!(on.generate_use_learning.as_deref(), Some("out.jsonl"));
+        assert_eq!(on.seed, 4242);
     }
 
     #[test]

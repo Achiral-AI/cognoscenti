@@ -44,6 +44,13 @@ fn main() -> Result<()> {
 
     let config = BenchmarkConfig::parse();
 
+    if let Some(path) = &config.generate_use_learning {
+        let sha = cognoscenti::use_learning::write_use_learning_stream(path, config.seed)?;
+        println!("Generated {path} (use-learning, seed {})", config.seed);
+        println!("sha256 {sha}");
+        return Ok(());
+    }
+
     if let Some(path) = &config.generate_stream {
         return generate_stream_file(&config, path);
     }

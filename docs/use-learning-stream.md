@@ -1,7 +1,8 @@
 # The use-learning stream (specification)
 
-Status: specification, 2026-11-21. Plan 40 Stage 5 item 1. No generator exists yet and no run
-has happened on this stream. The arms, metrics, seeds and decision rule are in
+Status: specification, 2026-11-21. Plan 40 Stage 5 item 1. The generator exists
+(`src/use_learning.rs`, written test-first after this specification); no run has happened on
+this stream. The arms, metrics, seeds and decision rule are in
 `preregistration-use-learning-2026-11.md`, registered before the generator is written.
 
 ## Question
@@ -42,13 +43,24 @@ Questions are scheduled over the 90 days with exponential gaps drawn from the ge
 the time between uses varies and decay has something to act on. A question is placed after every
 event it may depend on.
 
-Use count. For a question, the number of earlier asks in the same question family (a `pop`
-topic, a `rare` D family, a `change` topic). Bins: 0 (first ask), 1 to 2, 3 to 6, 7 and over.
-A bin with fewer than 10 questions is marked "n too small" and not plotted.
+Use count. For a question, the number of earlier asks whose gold event is the same event.
+A `pop` topic's asks share one gold, so its count climbs with every ask; `rare-c` and `change`
+questions count asks of their own gold fact, so the first ask after a change starts at 0. Bins:
+0 (first ask), 1 to 2, 3 to 6, 7 and over. A bin with fewer than 10 questions is marked "n too
+small" and not plotted.
 
-Ids follow the existing scheme (`pop-007-q`, `rare-003-q`, `change-011-q`, `tail-002-q`) so
-`category_of` groups them without change. The dataset lint covers the stream; it must pass with no
-issue before any run.
+Ids. Question ids are `{category}-{NNN}-q` with the categories `pop`, `rare-d` (the popular
+staging fact's own questions, which build its use), `rare-c` (the correct production fact, the
+headroom questions), `change` and `tail`, so `category_of` groups them without change. Event ids
+name the topic: `pop-t07-f` (fact) and `pop-t07-twin`, `rare-t03-c` and `rare-t03-d`,
+`change-t11-a` and `change-t11-b`, `tail-t02-f`. Each question has exactly one gold event. A
+`rare` topic asks about D seven or eight times before its first `rare-c` question, by
+construction. The dataset lint covers the stream and must pass with no issue before any run.
+
+Generate it with `cognoscenti --generate-use-learning <path> --seed <seed>`; the command lints the
+file and prints its SHA-256 (`src/use_learning.rs`). The `pop` twin is a different slot of the
+same topic, not a conflicting value for the same slot, so the question has exactly one right
+answer and the near-tie is only in how relevant the two notes look to the wording.
 
 ## What Cognoscenti has to gain first
 
@@ -62,7 +74,7 @@ issue before any run.
    capability, when `--feedback gold` is given: the retrieved memories that are in the gold set
    are reported as used and helpful, the others are not reported. This stands in for a client
    that reinforces what it used. `--feedback off` (the default) sends nothing.
-3. The generator, written test-first, after this specification is committed.
+3. Done: the generator, test-first, after this specification was committed.
 4. The use-count baseline and per-bin curves in `results.rs` and `report.rs` (a `use_count` on
    each question row, a chart of recall against use bin, one line per arm, with the paired
    difference to the off arm).

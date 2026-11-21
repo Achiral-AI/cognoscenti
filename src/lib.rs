@@ -20,6 +20,7 @@ pub mod stability;
 pub mod stats;
 pub mod stream;
 pub mod tokens;
+pub mod use_learning;
 
 pub use achiral_http::AchiralHttpSystem;
 pub use actr::{
