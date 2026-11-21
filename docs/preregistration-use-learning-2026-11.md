@@ -16,10 +16,10 @@ Every arm replays the same stream on fresh orgs (`rerank` mode, noise 0, a new o
 
 | Arm | System | Setting | Explicit use feedback |
 |---|---|---|---|
-| `off` | `achiral` | `x-achiral-retrieval-params` `{"activationWeightScale":0}` | `--feedback gold` |
-| `shipped` | `achiral` | no header (shipped activation) | `--feedback gold` |
-| `shipped-nofb` | `achiral` | no header | none (feedback-off control) |
-| `b2` | `achiral` | `{"activationRangeWeight":1.0}` | `--feedback gold` |
+| `off` | `achiral` | `x-achiral-retrieval-params` `{"activationWeightScale":0}` | `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1` |
+| `shipped` | `achiral` | no header (shipped activation) | `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1` |
+| `shipped-nofb` | `achiral` | no header | none (feedback-off control; the variable unset) |
+| `b2` | `achiral` | `{"activationRangeWeight":1.0}` | `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1` |
 | `bm25` | `bm25` | the local baseline | n/a |
 | `usecount` | `usecount` | `bm25`'s top 20, then among those within 10% of the top bm25 score, the one used more often first | n/a |
 
@@ -97,4 +97,7 @@ the automatic reinforcement of `recall`.
 
 ## Deviations
 
-None yet.
+- 2026-11-21, before any run on this stream: the explicit-feedback switch is the environment
+  variable `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`, not a `--feedback gold` flag. The behaviour is
+  as registered: after each question the retrieved gold memories are reinforced; nothing else.
+  The arms table above is reworded to match.

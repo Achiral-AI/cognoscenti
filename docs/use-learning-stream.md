@@ -64,16 +64,18 @@ answer and the near-tie is only in how relevant the two notes look to the wordin
 
 ## What Cognoscenti has to gain first
 
-1. `use_feedback` in `AchiralHttpSystem`, off unless `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`.
+1. Done: `use_feedback` in `AchiralHttpSystem`, off unless `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`.
    The adapter keeps the map from an event id to the server memory id (the `id` in each recall
    item, read together with `metadata.cognoscenti_event_id`) and sends
    `POST /v1/memory/{id}/reinforce` with the `X-Achiral-Eval-Now` header and a body naming the
-   reason. The endpoint takes no helpful flag: it always adds 0.05 activation and one access.
-   So only `helpful = true` sends a call; `helpful = false` sends none.
-2. The replay loop calls `use_feedback` after each question, for systems that declare the
-   capability, when `--feedback gold` is given: the retrieved memories that are in the gold set
-   are reported as used and helpful, the others are not reported. This stands in for a client
-   that reinforces what it used. `--feedback off` (the default) sends nothing.
+   reason (the token needs `memory:control`). The endpoint takes no helpful flag: it always adds
+   0.05 activation and one access. So only `helpful = true` sends a call; `helpful = false`
+   sends none.
+2. Done: the replay loop calls `use_feedback` after each question, for systems that declare the
+   capability: the retrieved memories that are in the gold set are reported as used and helpful,
+   the others are not reported. This stands in for a client that reinforces what it used. There
+   is no `--feedback` flag: the environment variable is the one switch, so a run's feedback
+   setting is part of the launch environment (and of the arm name), not a second control.
 3. Done: the generator, test-first, after this specification was committed.
 4. The use-count baseline and per-bin curves in `results.rs` and `report.rs` (a `use_count` on
    each question row, a chart of recall against use bin, one line per arm, with the paired

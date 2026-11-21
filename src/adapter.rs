@@ -469,6 +469,17 @@ pub fn replay_stream(
                 let retrieved_ids: Vec<String> =
                     scored_candidates.iter().map(|(id, _)| id.clone()).collect();
                 let recall = recall_at_k(&question.gold_event_ids, &retrieved_ids, top_k);
+                // Stands in for a client that reinforces what it used.
+                if system.capabilities().use_feedback {
+                    let used: Vec<String> = retrieved_ids
+                        .iter()
+                        .filter(|id| question.gold_event_ids.contains(id))
+                        .cloned()
+                        .collect();
+                    if !used.is_empty() {
+                        system.use_feedback(&used, true);
+                    }
+                }
                 let tokens_injected = approx_token_count(&question.query)
                     + retrieved_ids
                         .iter()
@@ -2232,5 +2243,78 @@ mod tests {
                 },
             ]
         );
+    }
+
+    type FeedbackCalls = std::rc::Rc<std::cell::RefCell<Vec<(Vec<String>, bool)>>>;
+
+    struct Feedbacking {
+        enabled: bool,
+        calls: FeedbackCalls,
+    }
+    impl MemorySystem for Feedbacking {
+        fn name(&self) -> &str {
+            "fb"
+        }
+        fn ingest(&mut self, _: &StreamEvent) {}
+        fn retrieve(&mut self, _: &str, _: &Actor, _: DateTime<Utc>, _: usize) -> Vec<String> {
+            vec!["e1".to_string(), "e2".to_string()]
+        }
+        fn capabilities(&self) -> Capabilities {
+            Capabilities {
+                use_feedback: self.enabled,
+                ..Default::default()
+            }
+        }
+        fn use_feedback(&mut self, ids: &[String], helpful: bool) {
+            self.calls.borrow_mut().push((ids.to_vec(), helpful));
+        }
+    }
+
+    fn one_question_stream(gold: &str) -> Stream {
+        Stream {
+            items: vec![
+                StreamItem::Event(event("e1", "2026-01-01T00:00:00Z")),
+                StreamItem::Question(crate::stream::StreamQuestion {
+                    id: "q1".to_string(),
+                    query: "x".to_string(),
+                    asked_at: "2026-01-15T00:00:00Z".parse().unwrap(),
+                    asked_by: Actor {
+                        id: "a".to_string(),
+                        kind: ActorKind::User,
+                    },
+                    gold_event_ids: vec![gold.to_string()],
+                    gold_answer: None,
+                    validity: None,
+                    expected_gap_entity_ids: Vec::new(),
+                }),
+            ],
+        }
+    }
+
+    #[test]
+    fn replay_reports_the_retrieved_gold_memories_as_used_when_the_system_declares_feedback() {
+        let calls = Default::default();
+        let mut system = Feedbacking {
+            enabled: true,
+            calls: std::rc::Rc::clone(&calls),
+        };
+        replay_stream(&one_question_stream("e1"), &mut system, 3);
+        assert_eq!(*calls.borrow(), vec![(vec!["e1".to_string()], true)]);
+    }
+
+    #[test]
+    fn replay_sends_no_feedback_without_the_capability_or_without_a_gold_hit() {
+        let calls: FeedbackCalls = Default::default();
+        let mut off = Feedbacking {
+            enabled: false,
+            calls: std::rc::Rc::clone(&calls),
+        };
+        replay_stream(&one_question_stream("e1"), &mut off, 3);
+        let mut miss = Feedbacking {
+            enabled: true,
+            calls: std::rc::Rc::clone(&calls),
+        };
+        replay_stream(&one_question_stream("e9"), &mut miss, 3);
+        assert!(calls.borrow().is_empty());
     }
 }

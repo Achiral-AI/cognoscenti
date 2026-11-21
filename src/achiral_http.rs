@@ -32,9 +32,10 @@
 //! routing. `now` IS sent, as the `X-Achiral-Eval-Now` header
 //! (`eval_now_header`) - achiral.ai's `recall`/`reinforce` honour it under
 //! `INFERENCE_EVAL_MODE`, confirmed 2026-11-08 (Plan 25's "Public memory
-//! API: honour now" is done on both sides now). `reinforce` itself is not
-//! wired into this adapter yet (no `use_feedback` override), so only
-//! retrieval is time-travel-safe so far.
+//! API: honour now" is done on both sides now). With
+//! `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1` the adapter declares `use_feedback`
+//! and sends `POST /v1/memory/{id}/reinforce` (same eval-now header) for each
+//! gold memory a question retrieved; the token needs `memory:control`.
 
 use crate::adapter::MemorySystem;
 use crate::http_stream::{post_raw, RawResponse};
@@ -71,6 +72,15 @@ pub struct AchiralHttpSystem {
     /// The server's `retrieval` object from this system's first retrieve,
     /// once it matched the request.
     retrieval_echo: Option<Value>,
+    /// Whether `use_feedback` sends reinforce calls
+    /// (`COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`).
+    use_feedback: bool,
+    /// Event id -> the server's memory id, from the recall items seen so
+    /// far; `reinforce` is addressed by the server id.
+    server_ids: HashMap<String, String>,
+    /// The last question's simulated time, so a reinforce lands at the same
+    /// clock as the recall it follows.
+    feedback_now: DateTime<Utc>,
     /// Org-scope events ingested since the last successful settle(),
     /// identified by the `businessEventId` achiral.ai's own ingest
     /// response returns - what settle() polls achiral.ai to confirm.
@@ -380,6 +390,13 @@ impl AchiralHttpSystem {
             retry: RetryPolicy::from_env()?,
             retrieval: RetrievalOverride::from_env()?,
             retrieval_echo: None,
+            use_feedback: use_feedback_enabled(
+                std::env::var("COGNOSCENTI_ACHIRAL_USE_FEEDBACK")
+                    .ok()
+                    .as_deref(),
+            ),
+            server_ids: HashMap::new(),
+            feedback_now: Utc::now(),
             user_member_ids,
         })
     }
@@ -677,6 +694,55 @@ fn recall_item_id(item: &Value) -> Option<String> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_string))
+}
+
+/// (event id, server memory id) for each recall item that carries both.
+fn parse_server_ids(value: &Value) -> Vec<(String, String)> {
+    value
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let event_id = item
+                        .get("metadata")?
+                        .get("cognoscenti_event_id")?
+                        .as_str()?;
+                    let server_id = item.get("id")?.as_str()?;
+                    Some((event_id.to_string(), server_id.to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Server ids to reinforce. The endpoint has no helpful flag (it always adds
+/// activation), so an unhelpful report sends nothing.
+fn reinforce_targets(
+    server_ids: &HashMap<String, String>,
+    event_ids: &[String],
+    helpful: bool,
+) -> Vec<String> {
+    if !helpful {
+        return Vec::new();
+    }
+    event_ids
+        .iter()
+        .filter_map(|id| server_ids.get(id).cloned())
+        .collect()
+}
+
+fn reinforce_url(base_url: &str, server_id: &str) -> String {
+    format!("{base_url}/v1/memory/{server_id}/reinforce")
+}
+
+fn reinforce_payload() -> Value {
+    json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti"})
+}
+
+fn use_feedback_enabled(value: Option<&str>) -> bool {
+    value == Some("1")
 }
 
 /// Parses the org-scope `recall` response (`serializeMemory`,
@@ -1015,6 +1081,7 @@ impl MemorySystem for AchiralHttpSystem {
         crate::adapter::Capabilities {
             settle: true,
             evidence_graph: true,
+            use_feedback: self.use_feedback,
             ..Default::default()
         }
     }
@@ -1055,6 +1122,23 @@ impl MemorySystem for AchiralHttpSystem {
             .unwrap_or_else(|err| panic!("{err:#}"));
     }
 
+    fn use_feedback(&mut self, memory_ids: &[String], helpful: bool) {
+        if !self.use_feedback {
+            return;
+        }
+        let headers = vec![eval_now_header(self.feedback_now)];
+        for server_id in reinforce_targets(&self.server_ids, memory_ids, helpful) {
+            run_json_post(
+                &self.retry,
+                &reinforce_url(&self.base_url, &server_id),
+                self.api_key.as_deref(),
+                &headers,
+                &reinforce_payload(),
+            )
+            .unwrap_or_else(|err| panic!("achiral reinforce failed: {err:#}"));
+        }
+    }
+
     fn retrieve_scored(
         &mut self,
         query: &str,
@@ -1062,6 +1146,7 @@ impl MemorySystem for AchiralHttpSystem {
         now: DateTime<Utc>,
         top_k: usize,
     ) -> Vec<(String, f64)> {
+        self.feedback_now = now;
         let payload = retrieve_payload(query, top_k);
         let headers = retrieve_headers(&self.retrieval, now);
         let mut routes = Vec::new();
@@ -1075,6 +1160,7 @@ impl MemorySystem for AchiralHttpSystem {
             )
             .unwrap_or_else(|err| panic!("achiral retrieve failed: {err:#}"));
             self.verify_retrieval(&response);
+            self.server_ids.extend(parse_server_ids(&response));
             routes.push(parse_recall_response(&response));
         }
         interleave_routes(routes, top_k)
@@ -1652,6 +1738,9 @@ mod tests {
             retry: RetryPolicy::default(),
             retrieval: RetrievalOverride::default(),
             retrieval_echo: None,
+            use_feedback: false,
+            server_ids: HashMap::new(),
+            feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
@@ -1673,6 +1762,9 @@ mod tests {
             retry: RetryPolicy::default(),
             retrieval: RetrievalOverride::default(),
             retrieval_echo: None,
+            use_feedback: false,
+            server_ids: HashMap::new(),
+            feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
@@ -1694,6 +1786,9 @@ mod tests {
             retry: RetryPolicy::default(),
             retrieval: RetrievalOverride::default(),
             retrieval_echo: None,
+            use_feedback: false,
+            server_ids: HashMap::new(),
+            feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
         };
         assert!(system.capabilities().settle);
@@ -2249,5 +2344,47 @@ mod tests {
             leak_trial_flags(&[trial(&merged_ids), trial(&["org-fact"])]),
             vec![true, false]
         );
+    }
+
+    #[test]
+    fn server_ids_pair_each_event_id_with_the_servers_memory_id() {
+        let response = json!({"data": [
+            {"id": "m1", "metadata": {"cognoscenti_event_id": "e1"}},
+            {"id": "m2"},
+            {"metadata": {"cognoscenti_event_id": "e3"}},
+        ]});
+        assert_eq!(
+            parse_server_ids(&response),
+            vec![("e1".to_string(), "m1".to_string())]
+        );
+    }
+
+    #[test]
+    fn reinforce_targets_are_known_ids_only_and_none_when_not_helpful() {
+        let map: HashMap<String, String> =
+            [("e1".to_string(), "m1".to_string())].into_iter().collect();
+        let ids = ["e1".to_string(), "unknown".to_string()];
+        assert_eq!(reinforce_targets(&map, &ids, true), vec!["m1".to_string()]);
+        assert!(reinforce_targets(&map, &ids, false).is_empty());
+    }
+
+    #[test]
+    fn reinforce_request_shape() {
+        assert_eq!(
+            reinforce_url("http://h:7080", "m1"),
+            "http://h:7080/v1/memory/m1/reinforce"
+        );
+        assert_eq!(
+            reinforce_payload(),
+            json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti"})
+        );
+    }
+
+    #[test]
+    fn use_feedback_is_on_only_for_the_value_1() {
+        assert!(use_feedback_enabled(Some("1")));
+        assert!(!use_feedback_enabled(Some("0")));
+        assert!(!use_feedback_enabled(Some("")));
+        assert!(!use_feedback_enabled(None));
     }
 }
