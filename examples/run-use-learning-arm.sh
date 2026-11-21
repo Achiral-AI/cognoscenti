@@ -5,7 +5,7 @@
 # Needs COGNOSCENTI_ACHIRAL_BASE_URL set for the Achiral arms; the token needs memory:control for feedback.
 set -eu
 arm="$1"; stream="$2"; out="$3"; shift 3
-common=(--replay-stream "$stream" --top-k 3 --replicates 5 --seed 0
+common=(--replay-stream "$stream" --top-k 1 --replicates 5 --seed 0
         --results-json "$out.results.json" --replicate-log "$out.replicates.log" --label "$arm")
 unset COGNOSCENTI_ACHIRAL_RETRIEVAL_MODE COGNOSCENTI_ACHIRAL_RETRIEVAL_PARAMS COGNOSCENTI_ACHIRAL_USE_FEEDBACK
 case "$arm" in

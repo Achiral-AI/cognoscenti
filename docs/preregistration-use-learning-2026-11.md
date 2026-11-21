@@ -101,3 +101,13 @@ the automatic reinforcement of `recall`.
   variable `COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`, not a `--feedback gold` flag. The behaviour is
   as registered: after each question the retrieved gold memories are reinforced; nothing else.
   The arms table above is reworded to match.
+- 2026-11-21, before any report-seed run and any Achiral arm run: the primary metric is top-1,
+  not recall@3. Every arm runs with `--top-k 1`, so "recall" in the metrics and the decision rule
+  above means recall@1 (one gold fact per question, so it is the top-1 hit). Reason: on the
+  tuning stream (seed 17) the local bm25 baseline scored recall@3 of 1.0 in every category,
+  because a topic has only two near-twin notes and the top 3 always holds both; recall@3 cannot
+  show a gain or a loss there. This was found from a baseline's behaviour on seed 17, not from
+  an Achiral arm, and no arm result chose the new metric. The generator, seeds, arms, bins and
+  the decision rule itself are unchanged. The `--top-k 3` in the arms paragraph is superseded by
+  this entry. Seed 17 top-1 for the two local baselines, seen before this entry: bm25 pop 0.817,
+  change 0.500; usecount pop 1.000, change 0.500.
