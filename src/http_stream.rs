@@ -21,7 +21,7 @@
 //! run"). No live vendor exists yet to verify what that should mean over
 //! HTTP, so this does not guess at it.
 
-use crate::adapter::MemorySystem;
+use crate::adapter::{MemorySystem, RetrievedItem};
 use crate::stream::{Actor, StreamEvent};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -85,6 +85,40 @@ pub fn parse_retrieve_response(value: &Value) -> Vec<(String, f64)> {
                     let id = entry.get("id")?.as_str()?.to_string();
                     let score = entry.get("score").and_then(Value::as_f64).unwrap_or(0.0);
                     Some((id, score))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Like `parse_retrieve_response`, keeping what a chunking or rewriting
+/// system can add to an entry: `sources`, the event ids it stands for (the
+/// entry's own `id` when absent; an empty list means it cannot say), and
+/// `text`, what it would inject.
+pub fn parse_retrieve_items(value: &Value) -> Vec<RetrievedItem> {
+    value
+        .get("results")
+        .and_then(Value::as_array)
+        .map(|results| {
+            results
+                .iter()
+                .filter_map(|entry| {
+                    let id = entry.get("id")?.as_str()?.to_string();
+                    let sources = match entry.get("sources").and_then(Value::as_array) {
+                        Some(list) => list
+                            .iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect(),
+                        None => vec![id],
+                    };
+                    Some(RetrievedItem {
+                        sources,
+                        score: entry.get("score").and_then(Value::as_f64).unwrap_or(0.0),
+                        text: entry
+                            .get("text")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    })
                 })
                 .collect()
         })
@@ -217,6 +251,19 @@ impl MemorySystem for HttpStreamSystem {
             .take(top_k)
             .collect()
     }
+
+    fn retrieve_items(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<RetrievedItem> {
+        let payload = retrieve_payload(query, actor, now, top_k);
+        let response = run_json_post(&self.retrieve_url, self.api_key.as_deref(), &[], &payload)
+            .unwrap_or_else(|err| panic!("{} retrieve failed: {err:#}", self.name));
+        parse_retrieve_items(&response)
+    }
 }
 
 #[cfg(test)]
@@ -307,6 +354,41 @@ mod tests {
             parse_retrieve_response(&json!({})),
             Vec::<(String, f64)>::new()
         );
+    }
+
+    #[test]
+    fn parse_retrieve_items_reads_optional_sources_and_text() {
+        let response = json!({
+            "results": [
+                {"id": "c1", "score": 0.9, "sources": ["e1", "e2"], "text": "merged chunk"},
+                {"id": "e3", "score": 0.4}
+            ]
+        });
+        let items = parse_retrieve_items(&response);
+        assert_eq!(items[0].sources, vec!["e1".to_string(), "e2".to_string()]);
+        assert_eq!(items[0].text.as_deref(), Some("merged chunk"));
+        assert_eq!(items[0].score, 0.9);
+        // No `sources`: the entry's own id is its one source, as before.
+        assert_eq!(items[1].sources, vec!["e3".to_string()]);
+        assert_eq!(items[1].text, None);
+    }
+
+    #[test]
+    fn parse_retrieve_items_keeps_an_empty_sources_list_as_no_source() {
+        let response = json!({"results": [{"id": "s1", "sources": [], "text": "summary"}]});
+        let items = parse_retrieve_items(&response);
+        assert!(items[0].sources.is_empty());
+    }
+
+    #[test]
+    fn parse_retrieve_items_drops_an_entry_with_no_id_and_ignores_non_string_sources() {
+        let response = json!({"results": [
+            {"score": 0.9},
+            {"id": "c", "sources": ["e1", 7, null]}
+        ]});
+        let items = parse_retrieve_items(&response);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].sources, vec!["e1".to_string()]);
     }
 
     #[test]

@@ -65,6 +65,30 @@ pub trait MemorySystem {
             .collect()
     }
 
+    /// What the system returned, as items rather than bare ids: for each, the
+    /// source events it stands for and, when the system knows it, the text it
+    /// would put in a prompt (`docs/scoring-standard.md`). A chunk reports the
+    /// event it was cut from; a chunk built from several reports each; a
+    /// production reports the events in its evidence. Defaults to one item
+    /// per id of `retrieve_scored`, with no text, so a system that only ranks
+    /// ids needs no change and is charged the source event's content.
+    fn retrieve_items(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<RetrievedItem> {
+        self.retrieve_scored(query, actor, now, top_k)
+            .into_iter()
+            .map(|(id, score)| RetrievedItem {
+                sources: vec![id],
+                score,
+                text: None,
+            })
+            .collect()
+    }
+
     /// Which optional operations below this system actually implements.
     /// Defaults to none: `ingest`/`retrieve` is the only contract every
     /// system in this crate honors today (Plan 25 adapter contract v2).
@@ -107,6 +131,62 @@ pub trait MemorySystem {
         _top_k: usize,
     ) -> Vec<String> {
         Vec::new()
+    }
+}
+
+/// One thing a system returned: a memory, a chunk or a production.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RetrievedItem {
+    /// Ids of the stream events this item stands for. Empty when the system
+    /// cannot say where it came from, which scores as a miss.
+    pub sources: Vec<String>,
+    pub score: f64,
+    /// The text the system would inject for this item. `None` means the
+    /// source events' own content.
+    pub text: Option<String>,
+}
+
+/// A ranking of distinct source events and the tokens its items inject.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Retrieval {
+    pub scored: Vec<(String, f64)>,
+    pub injected_tokens: usize,
+}
+
+/// Turns items into what is scored (`docs/scoring-standard.md`): distinct
+/// events in rank order, at most `top_k` of them, each at the score of the
+/// first item that carried it. Items after the last slot is filled are
+/// dropped. Tokens are an item's own text when it has one, otherwise the
+/// content of the events it newly contributes. `event_tokens` is a source
+/// event's token count.
+pub fn resolve_retrieval(
+    items: Vec<RetrievedItem>,
+    top_k: usize,
+    event_tokens: &dyn Fn(&str) -> Option<usize>,
+) -> Retrieval {
+    let mut scored: Vec<(String, f64)> = Vec::new();
+    let mut injected_tokens = 0usize;
+    for item in items {
+        if scored.len() >= top_k {
+            break;
+        }
+        let room = top_k - scored.len();
+        let mut fresh: Vec<&String> = Vec::new();
+        for source in &item.sources {
+            let taken = scored.iter().any(|(id, _)| id == source) || fresh.contains(&source);
+            if !taken && fresh.len() < room {
+                fresh.push(source);
+            }
+        }
+        injected_tokens += match &item.text {
+            Some(text) => approx_token_count(text),
+            None => fresh.iter().filter_map(|id| event_tokens(id)).sum(),
+        };
+        scored.extend(fresh.into_iter().map(|id| (id.clone(), item.score)));
+    }
+    Retrieval {
+        scored,
+        injected_tokens,
     }
 }
 
@@ -460,12 +540,17 @@ pub fn replay_stream(
                 // see what was just ingested - a no-op for every system
                 // that doesn't override settle().
                 system.settle(question.asked_at);
-                let scored_candidates = system.retrieve_scored(
-                    &question.query,
-                    &question.asked_by,
-                    question.asked_at,
+                let retrieval = resolve_retrieval(
+                    system.retrieve_items(
+                        &question.query,
+                        &question.asked_by,
+                        question.asked_at,
+                        top_k,
+                    ),
                     top_k,
+                    &|id| content_by_id.get(id).map(|c| approx_token_count(c)),
                 );
+                let scored_candidates = retrieval.scored;
                 let retrieved_ids: Vec<String> =
                     scored_candidates.iter().map(|(id, _)| id.clone()).collect();
                 let recall = recall_at_k(&question.gold_event_ids, &retrieved_ids, top_k);
@@ -480,12 +565,8 @@ pub fn replay_stream(
                         system.use_feedback(&used, true);
                     }
                 }
-                let tokens_injected = approx_token_count(&question.query)
-                    + retrieved_ids
-                        .iter()
-                        .filter_map(|id| content_by_id.get(id.as_str()))
-                        .map(|content| approx_token_count(content))
-                        .sum::<usize>();
+                let tokens_injected =
+                    approx_token_count(&question.query) + retrieval.injected_tokens;
                 // Plan 26 Phase 5: only call (and only score) this when
                 // both sides opted in - a question with nothing to expect
                 // and a system with nothing to report are both silence,
@@ -651,18 +732,17 @@ pub fn token_usage_by_cycle(
             let mut total_tokens = 0usize;
             let mut count = 0usize;
             for question in stream.questions() {
-                let retrieved_ids = system.retrieve(
-                    &question.query,
-                    &question.asked_by,
-                    question.asked_at,
+                let retrieval = resolve_retrieval(
+                    system.retrieve_items(
+                        &question.query,
+                        &question.asked_by,
+                        question.asked_at,
+                        top_k,
+                    ),
                     top_k,
+                    &|id| content_by_id.get(id).map(|c| approx_token_count(c)),
                 );
-                total_tokens += approx_token_count(&question.query)
-                    + retrieved_ids
-                        .iter()
-                        .filter_map(|id| content_by_id.get(id))
-                        .map(|content| approx_token_count(content))
-                        .sum::<usize>();
+                total_tokens += approx_token_count(&question.query) + retrieval.injected_tokens;
                 count += 1;
             }
             let mean = if count == 0 {
@@ -2316,5 +2396,228 @@ mod tests {
         };
         replay_stream(&one_question_stream("e9"), &mut miss, 3);
         assert!(calls.borrow().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod retrieval_contract_tests {
+    //! `docs/scoring-standard.md`: events count once, a multi-event chunk
+    //! retrieves each reported source, and tokens are the text a system would
+    //! inject.
+    use super::*;
+    use crate::stream::{ActorKind, Scope, ScopeKind, StreamQuestion};
+
+    fn item(sources: &[&str], score: f64, text: Option<&str>) -> RetrievedItem {
+        RetrievedItem {
+            sources: sources.iter().map(|s| s.to_string()).collect(),
+            score,
+            text: text.map(str::to_string),
+        }
+    }
+
+    // Tokens of an event are its word count, here the number of "w"s.
+    fn tokens(id: &str) -> Option<usize> {
+        match id {
+            "e1" => Some(10),
+            "e2" => Some(20),
+            "e3" => Some(40),
+            _ => None,
+        }
+    }
+
+    fn ids(r: &Retrieval) -> Vec<&str> {
+        r.scored.iter().map(|(id, _)| id.as_str()).collect()
+    }
+
+    #[test]
+    fn items_with_one_source_and_no_text_behave_as_a_plain_ranking() {
+        let items = vec![item(&["e1"], 0.9, None), item(&["e2"], 0.4, None)];
+        let r = resolve_retrieval(items, 5, &tokens);
+        assert_eq!(
+            r.scored,
+            vec![("e1".to_string(), 0.9), ("e2".to_string(), 0.4)]
+        );
+        assert_eq!(r.injected_tokens, 30);
+    }
+
+    #[test]
+    fn two_chunks_of_one_event_are_one_retrieved_event_at_the_best_rank() {
+        let items = vec![
+            item(&["e1"], 0.9, Some("a b c")),
+            item(&["e1"], 0.8, Some("d e")),
+            item(&["e2"], 0.4, Some("f")),
+        ];
+        let r = resolve_retrieval(items, 2, &tokens);
+        assert_eq!(ids(&r), vec!["e1", "e2"]);
+        assert_eq!(r.scored[0].1, 0.9);
+    }
+
+    #[test]
+    fn a_repeated_chunk_does_not_use_a_slot_that_another_event_needs() {
+        let items = vec![
+            item(&["e1"], 0.9, Some("a")),
+            item(&["e1"], 0.8, Some("b")),
+            item(&["e1"], 0.7, Some("c")),
+            item(&["e2"], 0.4, Some("d")),
+        ];
+        assert_eq!(ids(&resolve_retrieval(items, 2, &tokens)), vec!["e1", "e2"]);
+    }
+
+    #[test]
+    fn a_chunk_built_from_several_events_retrieves_each_reported_source() {
+        let items = vec![item(&["e1", "e2"], 0.7, Some("merged text here"))];
+        let r = resolve_retrieval(items, 5, &tokens);
+        assert_eq!(
+            r.scored,
+            vec![("e1".to_string(), 0.7), ("e2".to_string(), 0.7)]
+        );
+    }
+
+    #[test]
+    fn a_source_repeated_inside_one_item_counts_once() {
+        let r = resolve_retrieval(vec![item(&["e1", "e1", "e2"], 0.7, Some("x"))], 2, &tokens);
+        assert_eq!(ids(&r), vec!["e1", "e2"]);
+    }
+
+    #[test]
+    fn a_chunk_with_no_reported_source_retrieves_nothing() {
+        let r = resolve_retrieval(vec![item(&[], 0.9, Some("summary"))], 5, &tokens);
+        assert!(r.scored.is_empty());
+    }
+
+    #[test]
+    fn a_multi_source_item_is_cut_to_the_slots_left() {
+        let items = vec![item(&["e1", "e2", "e3"], 0.7, Some("x"))];
+        assert_eq!(ids(&resolve_retrieval(items, 2, &tokens)), vec!["e1", "e2"]);
+    }
+
+    #[test]
+    fn items_after_the_last_slot_is_filled_are_neither_scored_nor_injected() {
+        let items = vec![
+            item(&["e1"], 0.9, Some("a b")),
+            item(&["e2"], 0.4, Some("c d e")),
+        ];
+        let r = resolve_retrieval(items, 1, &tokens);
+        assert_eq!(ids(&r), vec!["e1"]);
+        assert_eq!(r.injected_tokens, 2);
+    }
+
+    #[test]
+    fn tokens_are_the_text_the_system_injects_not_the_whole_source_event() {
+        let r = resolve_retrieval(vec![item(&["e3"], 0.9, Some("two words"))], 5, &tokens);
+        assert_eq!(r.injected_tokens, 2);
+    }
+
+    #[test]
+    fn every_injected_chunk_is_counted_even_when_its_event_was_already_retrieved() {
+        let items = vec![
+            item(&["e1"], 0.9, Some("a b c")),
+            item(&["e1"], 0.8, Some("d e")),
+        ];
+        assert_eq!(resolve_retrieval(items, 5, &tokens).injected_tokens, 5);
+    }
+
+    #[test]
+    fn an_item_with_no_text_counts_the_content_of_its_new_sources_once() {
+        let items = vec![item(&["e1"], 0.9, None), item(&["e1"], 0.8, None)];
+        let r = resolve_retrieval(items, 5, &tokens);
+        assert_eq!(ids(&r), vec!["e1"]);
+        assert_eq!(r.injected_tokens, 10);
+    }
+
+    struct Chunker;
+
+    impl MemorySystem for Chunker {
+        fn name(&self) -> &str {
+            "chunker"
+        }
+        fn ingest(&mut self, _event: &StreamEvent) {}
+        fn retrieve(&mut self, _: &str, _: &Actor, _: DateTime<Utc>, _: usize) -> Vec<String> {
+            unreachable!("replay asks for items")
+        }
+        fn retrieve_items(
+            &mut self,
+            _: &str,
+            _: &Actor,
+            _: DateTime<Utc>,
+            _: usize,
+        ) -> Vec<RetrievedItem> {
+            vec![
+                item(&["e1"], 0.9, Some("first chunk of one")),
+                item(&["e1"], 0.8, Some("second chunk")),
+                item(&["e2"], 0.4, Some("gold chunk")),
+            ]
+        }
+    }
+
+    fn org_event(id: &str, content: &str) -> StreamEvent {
+        StreamEvent {
+            id: id.to_string(),
+            content: content.to_string(),
+            timestamp: "2026-01-01T00:00:00Z".parse().unwrap(),
+            actor: Actor {
+                id: "a".to_string(),
+                kind: ActorKind::User,
+            },
+            scope: Scope {
+                kind: ScopeKind::Org,
+                id: "acme".to_string(),
+            },
+            source: "test".to_string(),
+            supersedes: None,
+            entities: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn replay_scores_distinct_events_and_counts_the_injected_chunks() {
+        let stream = Stream {
+            items: vec![
+                StreamItem::Event(org_event("e1", "one two three four five six seven")),
+                StreamItem::Event(org_event("e2", "one two three four five six seven eight")),
+                StreamItem::Question(StreamQuestion {
+                    id: "q1".to_string(),
+                    query: "what is it".to_string(),
+                    asked_at: "2026-02-01T00:00:00Z".parse().unwrap(),
+                    asked_by: Actor {
+                        id: "a".to_string(),
+                        kind: ActorKind::User,
+                    },
+                    gold_event_ids: vec!["e2".to_string()],
+                    gold_answer: None,
+                    validity: None,
+                    expected_gap_entity_ids: Vec::new(),
+                }),
+            ],
+        };
+        let r = &replay_stream(&stream, &mut Chunker, 2)[0];
+        assert_eq!(r.retrieved_ids, vec!["e1".to_string(), "e2".to_string()]);
+        assert_eq!(r.recall_at_k, 1.0);
+        // query 3 + chunks 4 + 2 + 2
+        assert_eq!(r.tokens_injected, 3 + 4 + 2 + 2);
+        assert_eq!(r.scored_candidates.len(), 2);
+    }
+
+    #[test]
+    fn a_system_that_only_ranks_ids_gets_items_with_one_source_and_no_text() {
+        struct Plain;
+        impl MemorySystem for Plain {
+            fn name(&self) -> &str {
+                "plain"
+            }
+            fn ingest(&mut self, _event: &StreamEvent) {}
+            fn retrieve(&mut self, _: &str, _: &Actor, _: DateTime<Utc>, _: usize) -> Vec<String> {
+                vec!["e1".to_string(), "e2".to_string()]
+            }
+        }
+        let actor = Actor {
+            id: "a".to_string(),
+            kind: ActorKind::User,
+        };
+        let items = Plain.retrieve_items("q", &actor, Utc::now(), 2);
+        assert_eq!(
+            items,
+            vec![item(&["e1"], 1.0, None), item(&["e2"], 0.5, None)]
+        );
     }
 }
