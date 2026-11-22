@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `MemorySystem::retrieve_items` and `RetrievedItem` (`sources`, `score`, `text`): a system can
+  report which events a chunk or production stands for and the text it would inject. The replay
+  scores distinct events, so `top_k` counts events and not chunks, and charges tokens for the
+  injected text. A system that only ranks ids is unchanged. The generic HTTP envelope accepts
+  optional `sources` and `text` per result. A generic system that returned the same id twice is
+  now scored once, so its recall is not comparable with earlier runs.
+- `docs/scoring-standard.md`: what Cognoscenti scores (retrieval of source events, never a
+  model's answer), why, and the same rule for chunks and for productions, with a table of where
+  the code does not yet follow it.
+- `procedural` module (Plan 44 Phase 5): a fixed-size stream of team procedures, with reworded
+  situation questions, near-miss questions, a replaced procedure and a member's private
+  procedure, and scoring for adherence, near-miss firing, superseded-rule rate, scope leaks and
+  tokens per question. Library only: no command generates or scores it yet, and no system arm
+  has run on it. See `docs/procedural-track.md`.
+
 ### Changed
 - The `achiral` adapter asks an agent's question on the org route as well as the agent route
   and interleaves the two lists rank by rank (agent first) up to top-k. A score merge let the
