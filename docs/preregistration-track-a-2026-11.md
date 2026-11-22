@@ -393,3 +393,22 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     PR #228 squash), working tree clean; its later commit `e9a6eb65` is not in the running API, on
     purpose. The earlier natural-names cohorts (score-merge `4240735`, `natural-control` and the
     ablation) and the registered-dataset cohorts are reported as run and are never pooled with these.
+22. **Plan 40 B2 cohorts on the natural-names dataset, run 2026-11-22 (recorded after the fact).**
+    Two labelled cohorts, `b2 range=0.25` and `b2 range=1`, sent `x-achiral-retrieval-params`
+    `{"activationRangeWeight":W}` (deviation 14), 5 replicates, seed 0, `--skip-user-scope`, top-k 3,
+    2 s settle, 10 min confirm budget, Cognoscenti `3a76bf1`, achiral.ai `e9a6eb65`, fresh orgs
+    `ct9-b2*`, no retrieval-mode header, no noise. A first launch died 21 s in on `agent_not_found`
+    (the orgs lacked the four memory agents) and was discarded (`b2/failed-launch/`); the orgs were
+    re-provisioned with the agents and the cohorts relaunched. Results: 0.5562 (95% CI 0.5157-0.5985)
+    at 0.25 and 0.5285 (0.4880-0.5727) at 1, 0 leaks. Reported beside, not pooled with, the
+    interleave cohorts of item 21 (which ran without the header and on `42326dc8`).
+23. **B2 range 0.25 on the registered stream, announced 2026-11-22 before it runs.** One labelled cohort,
+    `registered b2 range=0.25`, on the registered dataset (sha256 `2fc8d6c2…93e2`, 544 kept questions,
+    `--skip-user-scope`, top-k 3, seed 0), 5 replicates, fresh orgs `ct10-b2reg-1` to `-5` (`rerank`,
+    noise 0, the four memory agents), header `{"activationRangeWeight":0.25}` (deviation 14), 15 s
+    settle as the registered cohorts, 10 min confirm budget, no retrieval-mode header. It differs from
+    the registered cohorts (item 11 to 16) in three ways, all stated: the adapter is `3a76bf1`
+    (deviation 20 interleave, not `7a6d238`), the achiral.ai build is `feat/benchmarks` at `15db2d24`
+    (adds `e9a6eb65`, the Plan 44 productions behind a flag that is off, and the reinforce fix), and
+    the params header is sent. It is reported beside the registered cohorts (0.559 at `s = 0`),
+    never pooled with them, and does not replace them. No achiral.ai source is edited while it runs.
