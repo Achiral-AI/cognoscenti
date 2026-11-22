@@ -77,7 +77,7 @@ pub struct AchiralHttpSystem {
     use_feedback: bool,
     /// Event id -> the server's memory id, from the recall items seen so
     /// far; `reinforce` is addressed by the server id.
-    server_ids: HashMap<String, String>,
+    server_ids: HashMap<String, ServerMemory>,
     /// The last question's simulated time, so a reinforce lands at the same
     /// clock as the recall it follows.
     feedback_now: DateTime<Utc>,
@@ -696,8 +696,18 @@ fn recall_item_id(item: &Value) -> Option<String> {
         .or_else(|| item.get("id").and_then(Value::as_str).map(str::to_string))
 }
 
-/// (event id, server memory id) for each recall item that carries both.
-fn parse_server_ids(value: &Value) -> Vec<(String, String)> {
+/// A memory as the server knows it. recall serialises an org event as
+/// `ConversationMemory`, and reinforce needs that collection named: it looks
+/// in `DomainKnowledge` otherwise and answers 404.
+#[derive(Debug, Clone, PartialEq)]
+struct ServerMemory {
+    id: String,
+    collection: Option<String>,
+}
+
+/// (event id, server memory) for each recall item that carries an event id and
+/// a server id.
+fn parse_server_ids(value: &Value) -> Vec<(String, ServerMemory)> {
     value
         .get("data")
         .and_then(Value::as_array)
@@ -710,20 +720,30 @@ fn parse_server_ids(value: &Value) -> Vec<(String, String)> {
                         .get("cognoscenti_event_id")?
                         .as_str()?;
                     let server_id = item.get("id")?.as_str()?;
-                    Some((event_id.to_string(), server_id.to_string()))
+                    let collection = item
+                        .get("collection")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                    Some((
+                        event_id.to_string(),
+                        ServerMemory {
+                            id: server_id.to_string(),
+                            collection,
+                        },
+                    ))
                 })
                 .collect()
         })
         .unwrap_or_default()
 }
 
-/// Server ids to reinforce. The endpoint has no helpful flag (it always adds
-/// activation), so an unhelpful report sends nothing.
+/// Server memories to reinforce. The endpoint has no helpful flag (it always
+/// adds activation), so an unhelpful report sends nothing.
 fn reinforce_targets(
-    server_ids: &HashMap<String, String>,
+    server_ids: &HashMap<String, ServerMemory>,
     event_ids: &[String],
     helpful: bool,
-) -> Vec<String> {
+) -> Vec<ServerMemory> {
     if !helpful {
         return Vec::new();
     }
@@ -737,8 +757,13 @@ fn reinforce_url(base_url: &str, server_id: &str) -> String {
     format!("{base_url}/v1/memory/{server_id}/reinforce")
 }
 
-fn reinforce_payload() -> Value {
-    json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti"})
+fn reinforce_payload(collection: Option<&str>) -> Value {
+    let mut payload =
+        json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti"});
+    if let Some(collection) = collection {
+        payload["collection"] = json!(collection);
+    }
+    payload
 }
 
 fn use_feedback_enabled(value: Option<&str>) -> bool {
@@ -1127,13 +1152,13 @@ impl MemorySystem for AchiralHttpSystem {
             return;
         }
         let headers = vec![eval_now_header(self.feedback_now)];
-        for server_id in reinforce_targets(&self.server_ids, memory_ids, helpful) {
+        for memory in reinforce_targets(&self.server_ids, memory_ids, helpful) {
             run_json_post(
                 &self.retry,
-                &reinforce_url(&self.base_url, &server_id),
+                &reinforce_url(&self.base_url, &memory.id),
                 self.api_key.as_deref(),
                 &headers,
-                &reinforce_payload(),
+                &reinforce_payload(memory.collection.as_deref()),
             )
             .unwrap_or_else(|err| panic!("achiral reinforce failed: {err:#}"));
         }
@@ -2347,24 +2372,46 @@ mod tests {
     }
 
     #[test]
-    fn server_ids_pair_each_event_id_with_the_servers_memory_id() {
+    fn server_ids_pair_each_event_id_with_the_servers_memory_id_and_collection() {
         let response = json!({"data": [
-            {"id": "m1", "metadata": {"cognoscenti_event_id": "e1"}},
+            {"id": "m1", "collection": "ConversationMemory",
+             "metadata": {"cognoscenti_event_id": "e1"}},
             {"id": "m2"},
             {"metadata": {"cognoscenti_event_id": "e3"}},
+            {"id": "m4", "metadata": {"cognoscenti_event_id": "e4"}},
         ]});
         assert_eq!(
             parse_server_ids(&response),
-            vec![("e1".to_string(), "m1".to_string())]
+            vec![
+                (
+                    "e1".to_string(),
+                    server_memory("m1", Some("ConversationMemory"))
+                ),
+                ("e4".to_string(), server_memory("m4", None)),
+            ]
         );
+    }
+
+    fn server_memory(id: &str, collection: Option<&str>) -> ServerMemory {
+        ServerMemory {
+            id: id.to_string(),
+            collection: collection.map(str::to_string),
+        }
     }
 
     #[test]
     fn reinforce_targets_are_known_ids_only_and_none_when_not_helpful() {
-        let map: HashMap<String, String> =
-            [("e1".to_string(), "m1".to_string())].into_iter().collect();
+        let map: HashMap<String, ServerMemory> = [(
+            "e1".to_string(),
+            server_memory("m1", Some("ConversationMemory")),
+        )]
+        .into_iter()
+        .collect();
         let ids = ["e1".to_string(), "unknown".to_string()];
-        assert_eq!(reinforce_targets(&map, &ids, true), vec!["m1".to_string()]);
+        assert_eq!(
+            reinforce_targets(&map, &ids, true),
+            vec![server_memory("m1", Some("ConversationMemory"))]
+        );
         assert!(reinforce_targets(&map, &ids, false).is_empty());
     }
 
@@ -2375,7 +2422,13 @@ mod tests {
             "http://h:7080/v1/memory/m1/reinforce"
         );
         assert_eq!(
-            reinforce_payload(),
+            reinforce_payload(Some("ConversationMemory")),
+            json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti",
+                   "collection": "ConversationMemory"})
+        );
+        // No collection reported: the server's default applies, as before.
+        assert_eq!(
+            reinforce_payload(None),
             json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti"})
         );
     }
