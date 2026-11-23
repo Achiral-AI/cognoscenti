@@ -150,6 +150,10 @@ pub struct SystemResults {
     pub calibration: Option<Calibration>,
     pub tokens_by_cycle: Vec<CyclePoint>,
     pub replicates: Vec<ReplicateRow>,
+    /// Track C team metrics (rate and interval each), empty on any other
+    /// stream. An older results file without the field loads as empty.
+    #[serde(default)]
+    pub team: Vec<NamedStat>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -284,6 +288,7 @@ impl SystemResults {
             calibration: None,
             tokens_by_cycle: Vec::new(),
             replicates: Vec::new(),
+            team: Vec::new(),
         }
     }
 
@@ -500,6 +505,9 @@ pub fn to_csv(cohorts: &[RunFile]) -> String {
             }
             for l in &system.leaks {
                 row("leak", &l.name, &l.stat);
+            }
+            for t in &system.team {
+                row("team", &t.name, &t.stat);
             }
             if let Some(stat) = &system.flips {
                 row("flip", "all", stat);
@@ -880,5 +888,13 @@ mod tests {
         let row: QuestionRow =
             serde_json::from_str(r#"{"id":"pop-000-q","category":"pop","recall":1.0}"#).unwrap();
         assert_eq!(row.use_count, None);
+    }
+
+    #[test]
+    fn a_results_file_written_before_team_metrics_loads_with_none() {
+        let mut system = serde_json::to_value(SystemResults::empty("bm25")).unwrap();
+        system.as_object_mut().unwrap().remove("team");
+        let back: SystemResults = serde_json::from_value(system).unwrap();
+        assert!(back.team.is_empty());
     }
 }

@@ -858,6 +858,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         },
     );
 
+    let team_items = crate::team::items_beside_stream(std::path::Path::new(path), &stream)?;
     for name in parse_systems(&config.systems) {
         let (log, done) = open_replicate_log(config, std::path::Path::new(path), &stream, &name)?;
         if done.contains_key(&0) {
@@ -941,6 +942,16 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
             println!("{line}");
         }
 
+        let team = team_items.as_deref().map_or_else(Vec::new, |items| {
+            crate::team::team_stats(
+                &crate::team::score_team(items, &stream, &results),
+                config.seed,
+            )
+        });
+        for line in crate::team::team_lines(&team) {
+            println!("{line}");
+        }
+
         // None of these baselines claim a probability (baselines.rs: "the
         // reference isolates what activation adds") - raw scores (a term
         // count, an unbounded BM25 weight) run straight through
@@ -964,6 +975,7 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         let mut system_results =
             crate::results::SystemResults::from_replay(&name, &stream, &results, config.seed);
         system_results.calibration = calibration;
+        system_results.team = team;
 
         if config.replicates > 1 {
             let section =

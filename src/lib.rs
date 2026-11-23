@@ -20,6 +20,7 @@ pub mod scoring;
 pub mod stability;
 pub mod stats;
 pub mod stream;
+pub mod team;
 pub mod tokens;
 pub mod use_curves;
 pub mod use_learning;

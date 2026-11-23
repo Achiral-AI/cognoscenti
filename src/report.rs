@@ -1302,6 +1302,7 @@ pub fn render_html(cohorts: &[RunFile]) -> String {
     h.push_str(&with_rebuilt_note(calibration_section(&series), &series));
     h.push_str(&with_rebuilt_note(cycles_section(&series), &series));
     h.push_str(&with_rebuilt_note(leak_section(&series), &series));
+    h.push_str(&team_section(&series));
     h.push_str(&settings_section(cohorts, &series));
     h.push_str(&replicates_section(&series));
     h.push_str("</main></body></html>");
@@ -1979,6 +1980,32 @@ fn leak_section(series: &[Series<'_>]) -> String {
         legend(&shown),
         dot_plot("Leak rate by category and system", &rows, max)
     );
+    h
+}
+
+/// Track C: the team metrics of every run that has them, as a table. Absent
+/// when no run was scored on a team stream.
+fn team_section(series: &[Series<'_>]) -> String {
+    let with_team: Vec<&Series<'_>> = series.iter().filter(|s| !s.sys.team.is_empty()).collect();
+    if with_team.is_empty() {
+        return String::new();
+    }
+    let mut h = String::from(r#"<section id="team"><h2>Team memory</h2>"#);
+    h.push_str(r#"<p class="muted">Supersession, provenance and decision lineage on a team stream, scored per item against its gold evidence. The two controls are hard negatives: newest-wins fails them. A leaver leak is a private note returned to someone who may not see it.</p>"#);
+    h.push_str(&table_open(&["System", "Metric", "n", "Rate (95% CI)"]));
+    for s in with_team {
+        for t in &s.sys.team {
+            let _ = write!(
+                h,
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                esc(&s.name()),
+                esc(&t.name),
+                t.stat.n,
+                esc(&t.stat.display())
+            );
+        }
+    }
+    h.push_str("</tbody></table></div></section>");
     h
 }
 
