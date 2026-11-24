@@ -75,6 +75,14 @@ pub struct AchiralHttpSystem {
     /// Whether `use_feedback` sends reinforce calls
     /// (`COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`).
     use_feedback: bool,
+    /// Whether agent-scope writes carry event time and supersession
+    /// (`COGNOSCENTI_ACHIRAL_AGENT_WRITE_TIME=1`).
+    agent_write_time: bool,
+    /// Whether an agent asker's org route comes first when interleaving
+    /// (`COGNOSCENTI_ACHIRAL_ORG_ROUTE_FIRST=1`).
+    org_route_first: bool,
+    /// Event id -> the server's id for the agent note written for it.
+    agent_memory_ids: HashMap<String, String>,
     /// Event id -> the server's memory id, from the recall items seen so
     /// far; `reinforce` is addressed by the server id.
     server_ids: HashMap<String, ServerMemory>,
@@ -395,6 +403,17 @@ impl AchiralHttpSystem {
                     .ok()
                     .as_deref(),
             ),
+            agent_write_time: use_feedback_enabled(
+                std::env::var("COGNOSCENTI_ACHIRAL_AGENT_WRITE_TIME")
+                    .ok()
+                    .as_deref(),
+            ),
+            org_route_first: use_feedback_enabled(
+                std::env::var("COGNOSCENTI_ACHIRAL_ORG_ROUTE_FIRST")
+                    .ok()
+                    .as_deref(),
+            ),
+            agent_memory_ids: HashMap::new(),
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids,
@@ -490,6 +509,19 @@ pub fn ingest_agent_payload(event: &StreamEvent) -> Value {
     })
 }
 
+/// The agent-scope body with event time and the note it replaces, for a
+/// server whose `remember` reads `occurredAt` and `supersedes` (the
+/// private-memory fix). `replaces` is the server's own id for the earlier
+/// note, not the stream's event id.
+pub fn ingest_agent_payload_timed(event: &StreamEvent, replaces: Option<&str>) -> Value {
+    let mut payload = ingest_agent_payload(event);
+    payload["occurredAt"] = json!(event.timestamp.to_rfc3339());
+    if let Some(id) = replaces {
+        payload["supersedes"] = json!([id]);
+    }
+    payload
+}
+
 /// Where to `POST` an ingest for this event's scope.
 pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
     match scope.kind {
@@ -529,8 +561,16 @@ pub fn ingest_url(base_url: &str, scope: &Scope) -> Option<String> {
 /// org-scope (the `agent` category's gold is one) or a note private to it, so
 /// an agent asks both. A user asks the org route only.
 pub fn retrieve_urls(base_url: &str, actor: &Actor) -> Vec<String> {
+    retrieve_urls_ordered(base_url, actor, false)
+}
+
+/// Like `retrieve_urls`, with the org route first when `org_first` is set.
+/// Interleaving takes rank 1 of each route in turn, so the first route gets
+/// the extra slot at top 3.
+pub fn retrieve_urls_ordered(base_url: &str, actor: &Actor, org_first: bool) -> Vec<String> {
     let org = format!("{base_url}/v1/memory/retrieve");
     match actor.kind {
+        ActorKind::Agent if org_first => vec![org, retrieve_url(base_url, actor)],
         ActorKind::Agent => vec![retrieve_url(base_url, actor), org],
         ActorKind::User => vec![org],
     }
@@ -1069,6 +1109,14 @@ impl MemorySystem for AchiralHttpSystem {
             )
         });
         let payload = match event.scope.kind {
+            ScopeKind::Agent if self.agent_write_time => {
+                let replaces = event
+                    .supersedes
+                    .as_ref()
+                    .and_then(|id| self.agent_memory_ids.get(id))
+                    .map(String::as_str);
+                ingest_agent_payload_timed(event, replaces)
+            }
             ScopeKind::Agent => ingest_agent_payload(event),
             ScopeKind::Org | ScopeKind::User => ingest_event_payload(event),
         };
@@ -1080,6 +1128,12 @@ impl MemorySystem for AchiralHttpSystem {
             &payload,
         )
         .unwrap_or_else(|err| panic!("achiral ingest failed: {err:#}"));
+        if self.agent_write_time && event.scope.kind == ScopeKind::Agent {
+            if let Some(id) = response.get("id").and_then(Value::as_str) {
+                self.agent_memory_ids
+                    .insert(event.id.clone(), id.to_string());
+            }
+        }
         // Agent-scope `remember` is already synchronous (no triage lag) -
         // only an org/user-scope event has a businessEventId to track.
         if matches!(event.scope.kind, ScopeKind::Org | ScopeKind::User) {
@@ -1175,7 +1229,7 @@ impl MemorySystem for AchiralHttpSystem {
         let payload = retrieve_payload(query, top_k);
         let headers = retrieve_headers(&self.retrieval, now);
         let mut routes = Vec::new();
-        for url in retrieve_urls(&self.base_url, actor) {
+        for url in retrieve_urls_ordered(&self.base_url, actor, self.org_route_first) {
             let response = run_json_post(
                 &self.retry,
                 &url,
@@ -1764,6 +1818,9 @@ mod tests {
             retrieval: RetrievalOverride::default(),
             retrieval_echo: None,
             use_feedback: false,
+            agent_write_time: false,
+            org_route_first: false,
+            agent_memory_ids: HashMap::new(),
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
@@ -1788,6 +1845,9 @@ mod tests {
             retrieval: RetrievalOverride::default(),
             retrieval_echo: None,
             use_feedback: false,
+            agent_write_time: false,
+            org_route_first: false,
+            agent_memory_ids: HashMap::new(),
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
@@ -1812,6 +1872,9 @@ mod tests {
             retrieval: RetrievalOverride::default(),
             retrieval_echo: None,
             use_feedback: false,
+            agent_write_time: false,
+            org_route_first: false,
+            agent_memory_ids: HashMap::new(),
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
@@ -2278,6 +2341,44 @@ mod tests {
         };
         assert_eq!(
             retrieve_urls("http://unused", &user),
+            vec!["http://unused/v1/memory/retrieve".to_string()]
+        );
+    }
+
+    // Plan 40 private-memory fix: an agent note can carry event time and the
+    // note it replaces, which the server stores and recall uses. Opt-in, so
+    // the registered adapter behavior is unchanged without it.
+    #[test]
+    fn timed_agent_payload_carries_event_time_and_the_note_it_replaces() {
+        let event = org_event();
+        let payload = ingest_agent_payload_timed(&event, Some("mem-9"));
+        assert_eq!(payload["text"], "hello");
+        assert_eq!(payload["occurredAt"], "2026-01-01T00:00:00+00:00");
+        assert_eq!(payload["supersedes"], json!(["mem-9"]));
+    }
+
+    #[test]
+    fn timed_agent_payload_omits_supersedes_when_nothing_is_replaced() {
+        let payload = ingest_agent_payload_timed(&org_event(), None);
+        assert_eq!(payload["occurredAt"], "2026-01-01T00:00:00+00:00");
+        assert!(payload.get("supersedes").is_none());
+    }
+
+    #[test]
+    fn an_agent_can_ask_the_org_route_first() {
+        assert_eq!(
+            retrieve_urls_ordered("http://unused", &agent("ops-agent"), true),
+            vec![
+                "http://unused/v1/memory/retrieve".to_string(),
+                "http://unused/v1/memory/agents/ops-agent/retrieve".to_string(),
+            ]
+        );
+        let user = Actor {
+            id: "bob".to_string(),
+            kind: ActorKind::User,
+        };
+        assert_eq!(
+            retrieve_urls_ordered("http://unused", &user, true),
             vec!["http://unused/v1/memory/retrieve".to_string()]
         );
     }
