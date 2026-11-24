@@ -49,4 +49,22 @@ First confirmatory run under this definition. No setting in this file changed af
 
 - Private memory by category: agent 0.31 (70), owner 1.00 (18), individual 0.49 (35, the agent-scope half; the user-scope half is not run). The earlier B2 run, which had the 0.25 band only through a header, scored 0.20 on this component (agent 0.31, owner 0.06, individual 0.03).
 - Baselines on the same stream and formula, from a 5-replicate run on 2026-11-24 (same binary 3a76bf1 and stream hash as Achiral; the earlier 3-replicate figures were identical): `bm25` 0.64 (Access 0.12), `verbatim` 0.48 (Access 0.60), `recency` 0.50 (Access 0.00), `full-context` and `bounded-window` 0.00. A baseline that returns everything scores high on Private memory only because it leaks; Access is the component that shows it.
-- Arm b3kw (keyword candidates in rerank) is running and is reported separately.
+
+## Result note: arm b3kw (added 2026-11-24, after the run)
+
+Second confirmatory run, with `keywordCandidates` on in the retrieval request. Nothing else differs from arm b2def, and no setting in this file changed after either run started. The setting was chosen after seeing arm b2def's result on this same stream, so the two arms are reported together, not as independent tests.
+
+- Run: 2026-11-24T03:46Z to 2026-11-24T18:17Z. Serving commit `5a11cad76aecc4badcb8a7de5bff86c24fec6da4`, container `bench-api`, `RestartCount` 0 and the same `StartedAt` at the end, serving checkout unchanged. Binary `cognoscenti-3a76bf1`. Stream `trust-seed-0`, sha256 `2fc8d6c2...93e2`, 5 replicates, seed 0, top-k 3, `--skip-user-scope`. Exit 0.
+- Score: 0.88 (95% interval 0.85 to 0.90), against 0.80 for arm b2def.
+
+| Component      | n   | Achiral | 95% interval                                                                   |
+| -------------- | --- | ------- | ------------------------------------------------------------------------------ |
+| Access         | 141 | 1.00    | 0 leaks; the bootstrap is degenerate, so the leak rate is below 2.1% (3 / 141) |
+| Currency       | 70  | 1.00    | degenerate; every supersede trial passed in all 5 replicates                   |
+| Recall         | 280 | 0.90    | 0.86 to 0.93                                                                   |
+| Private memory | 123 | 0.61    | 0.52 to 0.69                                                                   |
+
+- Per-replicate recall@3: 0.8585, 0.8566, 0.8566, 0.8585, 0.8585. No leaks in any replicate.
+- Baselines are the ones in the arm b2def note; the best, `bm25`, scores 0.64 and leaks on Access (0.12).
+- Wall time: the host slept for part of the run. From the macOS power log (`pmset -g log`, derived, not measured by the harness), the run took 14 h 31 min of wall time, of which about 6 h 41 min was asleep, leaving about 7 h 50 min awake. The server and harness did not restart, and no score depends on wall-clock time. Arm b2def took 8 h 06 min of wall time, with about 15 min asleep.
+- Not measured: the agent-note event-time and supersession fixes and the org-route-first option were built after this stream was run and were not part of either arm. Measuring them needs a new frozen serving commit and a stream that did not shape them.
