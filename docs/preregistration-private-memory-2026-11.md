@@ -107,3 +107,31 @@ sha256, stream hash, keys file name (never its contents), start and end times.
 ## Deviations
 
 None yet.
+
+## Result: arm P0 (control), 2026-11-25
+
+Run 2026-11-25 10:18:04Z to 18:00:27Z. Serving commit `6ad36ac9`
+(`6ad36ac999fd75873b024e755dce52f87f9d1dbf`), container `bench-api-pm`
+`StartedAt` 2026-11-25T10:17:24.935669218Z, `RestartCount` 0 at launch and at end.
+Adapter binary `cognoscenti-1dd2c43` (sha256 `80218e07094c5b64`), stream sha256
+`773b1896…2985`, five organizations `pm-p0-1` to `pm-p0-5`, keys file `keys-p0`.
+The harness exited 0. `pmset -g log` shows no sleep or wake event in the run window
+(`caffeinate -i -s -m` held the host awake), so the run took 7 h 42 min of wall time.
+
+| Component | n | P0, `trust-seed-1` | b3kw, `trust-seed-0` |
+| --- | --- | --- | --- |
+| Memory Trustworthiness | | 0.85 (0.82 to 0.87) | 0.88 (0.85 to 0.90) |
+| Access | 138 | 1.00 (0 leaks; 3/n bound 2.2%) | 1.00 |
+| Currency | 70 | 0.93 (0.86 to 0.99) | 1.00 |
+| Recall | 280 | 0.90 (0.86 to 0.93) | 0.90 (0.86 to 0.93) |
+| Private memory | 114 | 0.56 (0.47 to 0.65) | 0.61 (0.52 to 0.69) |
+
+Mean recall@3 by replicate: 0.8402, 0.8609, 0.8609, 0.8515, 0.8534. No trial with a
+leak in any replicate (0/138 each).
+
+Reading, descriptive only. The score on an unseen stream is 0.03 lower than on the
+stream the setting was chosen against, and the two intervals overlap. Recall matches.
+Currency is the largest drop (1.00 to 0.93), which fits `keywordCandidates` having
+been chosen after seeing seed 0. On this stream the five-replicate bm25 baseline is
+0.67, so the gap to the best local baseline is about 0.18, against 0.25 on seed 0.
+P2 has not finished; H1 to H3 are not evaluated.
