@@ -198,3 +198,61 @@ and what is written here is a deviation.
   12. **Listings are cached.** The adapter lists a session's rules once and again only after it
       authors a rule, instead of before every question. Nothing else writes to the organisation
       during a replay, so the selection inputs are the same.
+
+## Result, 2026-11-25
+
+Run once on the two registered report seeds; nothing was repeated because of a result. The
+only reruns were the discarded `procedural` attempt in the deviation above, which had scored
+nothing. Retrieval only, no model answered. Files: `results/procedural-2026-11/` (`index.html`,
+`results.json`, the six run files and the two streams). Rates are replicate 0 of both seeds
+pooled, as registered (120 follow questions, 80 near-miss, 8 supersede, 8 leak per arm);
+intervals are 95% percentile bootstraps over questions, seed 0.
+
+| | `declarative` | `procedural` | `bm25` (sanity) |
+|---|---|---|---|
+| Adherence | 111/120 = 0.925 (0.875-0.967) | 95/120 = 0.792 (0.717-0.858) | 120/120 |
+| Near-miss firing | 14/80 = 0.175 (0.100-0.263) | 20/80 = 0.250 (0.150-0.350) | 18/80 |
+| Superseded-rule rate | 0/8, n too small | 0/8, n too small | 5/8 |
+| Scope leaks, replicate 0 | 0/8, n too small | 0/8, n too small | 8/8 |
+| Scope leaks, 5 replicates x 2 seeds | 0/40 | 0/40 | 40/40 |
+| Tokens per question | 23.9 | 22.9 | 23.8 |
+| Flip rate over 5 replicates | 0/216 | 111/216 = 0.514 (0.449-0.579) | 0/216 |
+
+Paired, `procedural` minus `declarative`: adherence -0.133 (-0.225 to -0.050), exact McNemar
+p = 0.0052 (7 pairs only `procedural`, 23 only `declarative`); near-miss firing +0.075
+(-0.050 to +0.200; 16 / 10); superseded-rule and leaks 0 / 0 pairs of 8. Procedural adherence by
+replicate (120 pooled questions each): 95, 77, 94, 89, 69; `declarative` 111 in every replicate.
+
+**Decision rule.** Condition 1 does not hold (adherence is lower, not higher). Condition 2 is
+not shown to hold (upper end +0.200 against the +0.10 margin). Condition 3 holds only vacuously:
+0 of 8 in both arms, a rate under 10 questions. Condition 4 holds: 0 leaks in 40 trials in the
+`procedural` arm, which supports "under 0.075 at 95%", not "zero". **No claim is made that
+procedural memory beats declarative memory alone; in this setup it was measurably worse at
+adherence.** This does not turn `aiConfig.proceduralMemory` on for anyone.
+
+**What the numbers do not show.**
+- Why adherence is lower. The flip rate (0.514, against 0 for the arms without noise) shows the
+  registered selection noise changes the top-1 answer from one replicate to the next, and
+  deviation 7 predicted that, but no run here separates noise from the other adapter
+  differences (cue-only strength, deviations 1 to 3), so the cause is not established.
+- The leak checks in the `declarative` arm. Members' private events were not written to it
+  (deviation 10), so its 0/40 means nothing. `bm25`, which has no scoping, leaked on 40/40, so
+  the leak questions can detect a leak when there is one.
+- Anything about supersession: 8 questions per arm.
+- Anything beyond this setup: retrieval only, one organisation shape, one seed pair, questions
+  whose wording shares the situation's words, and the `procedural` arm's selection is a port
+  run in the adapter (deviation 1), not the server's own call.
+
+**Serving provenance.** Cognoscenti `feat/procedural-track`: streams generated at `25cd2af`
+(sha256 `cfdd49ec...2de0a` for 4242, `615050df...b477172` for 4243, full hashes in the run
+files); `declarative` replayed with the binary at `a18b448`, `procedural` and `bm25` with the
+binary at `c2b71e9` (the listing cache only touches the `procedural` arm). Server: achiral.ai
+`feat/procedural-event-wiring` at `3e09be4c` (off `feat/benchmarks` `6ad36ac9`), one container,
+development mode, on the isolated test network; its own Weaviate 1.39.2 with the
+`multi-qa-MiniLM-L6-cos-v1` transformer, the shared test MongoDB and test Redis, `rerank`,
+noise 0, the Ollama model that `development-api-2` is configured with for any generation (none
+was used in a replay). Declarative runs: 21:33Z to 21:54Z; procedural: about 22:10Z to 22:31Z.
+Two seeds ran at the same time against the same container. Files edited under the served copy
+while the runs were going (two comment/flag fixes from the wiring acceptance check) were not
+reloaded by the running process. The deployment is not the one other tracks use, so none of these
+numbers compare with theirs.
