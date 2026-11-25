@@ -59,14 +59,14 @@ Concretely, Cognoscenti measures:
 - **Consolidation** — does repeated use make a memory easier to retrieve?
 - **Contextual recall** — does retrieval change with context the way it should?
 
-| Benchmark | Tests | Fits ACT-R-style memory? |
-| ----------- | ------- | --------------------------- |
-| LongMemEval | Long-context memory retrieval | Moderate |
-| Needle-in-a-Haystack | Retrieval under huge contexts | Low |
-| InfiniteBench | Scaling to very long contexts | Low |
-| BABILong | Reasoning over long contexts | Moderate |
-| τ-bench | Stateful agent tasks over time | High |
-| SWE-bench | Long-running engineering tasks | High, for developer-facing agents |
+| Benchmark            | Tests                          | Fits ACT-R-style memory?          |
+| -------------------- | ------------------------------ | --------------------------------- |
+| LongMemEval          | Long-context memory retrieval  | Moderate                          |
+| Needle-in-a-Haystack | Retrieval under huge contexts  | Low                               |
+| InfiniteBench        | Scaling to very long contexts  | Low                               |
+| BABILong             | Reasoning over long contexts   | Moderate                          |
+| τ-bench              | Stateful agent tasks over time | High                              |
+| SWE-bench            | Long-running engineering tasks | High, for developer-facing agents |
 
 None of them test forgetting, consolidation, or contextual judgment
 directly. Cognoscenti doesn't replace them. LoCoMo still works fine as a
@@ -82,17 +82,17 @@ A fourth axis asks what it costs: does a system that learns from use need
 fewer tokens per query over time than one that doesn't.
 
 **Every diagram below is a schematic of what the code computes, not a
-measured result.** Nothing in this repository has been run against a live
-system yet. A number appears on this page only once a real run backs it.
+measured result.** Measured results are in [First results](#first-results).
+A number appears on this page only once a real run backs it.
 
 ### 1. Trust vs. confidence (calibration)
 
 <img src="assets/plots/trust-vs-confidence.svg" alt="Schematic reliability diagram: predicted probability vs. observed frequency needed, with a perfect-calibration diagonal and two illustrative curves" width="560">
 
-Of memories retrieved at predicted probability *p*, how often were they
+Of memories retrieved at predicted probability _p_, how often were they
 actually needed? Computed by [`src/calibration.rs`](src/calibration.rs)
 (`reliability_curve`, `brier_score`, `expected_calibration_error`) — and
-*derived* for any system that exposes only a raw score or rank, via
+_derived_ for any system that exposes only a raw score or rank, via
 `derive_probabilities_from_scores`, so a vendor can't opt out of calibration
 by simply not stating a probability.
 
@@ -147,6 +147,33 @@ signal. The token counter, both new baselines, and the checkpointed
 toy stream in the Stream Eval chapter of [`docs/usage.md`](docs/usage.md)
 — but no live run has been executed against a real dataset yet, so the
 diagram above remains a hypothesis, not a result.
+
+## First results
+
+Memory Trustworthiness is the unweighted mean of four scores: Access (1 minus
+the private-note leak rate), Currency (the current fact beats the replaced
+one), Recall, and Private memory. Run 2026-11-24 against a frozen Achiral
+serving commit (`5a11cad`), on a fixed synthetic stream (sha256
+`2fc8d6c2...93e2`): 544 questions, 5 replicates, top-3, seed 0. Intervals are
+95% bootstrap over questions; a score with no leaks uses the 3/n bound
+(under 2.1% for 141 trials). The 316 trials that need per-member accounts
+are not run. The retrieval setting in the run shown (`keywordCandidates`)
+was chosen after a first run on the same stream scored 0.80.
+
+| System                       | Memory Trustworthiness | Access (n=141) | Currency (n=70) | Recall (n=280)      | Private memory (n=123) |
+| ---------------------------- | ---------------------- | -------------- | --------------- | ------------------- | ---------------------- |
+| Achiral                      | 0.88 (0.85 to 0.90)    | 1.00 (0 leaks) | 1.00            | 0.90 (0.86 to 0.93) | 0.61 (0.52 to 0.69)    |
+| bm25                         | 0.63 (0.60 to 0.67)    | 0.12           | 0.60            | 0.87                | 0.95                   |
+| recency                      | 0.50                   | 0.00           | 1.00            | 0.00                | 1.00                   |
+| verbatim                     | 0.47 (0.44 to 0.50)    | 0.60           | 0.00            | 0.90                | 0.41                   |
+| full-context, bounded-window | 0.00                   | 0.00           | 0.00            | 0.01                | 0.00                   |
+
+A baseline that returns everything scores high on Private memory only because
+it leaks, so read Access beside it. Tokens injected per question (words, read
+path only): Achiral 27.3, bm25 31.8, verbatim 29.9, recency 30.0,
+bounded-window 160.5, full-context 9,447.8. The tokens-versus-cycles axis
+above has not been run. Full record, deviations and limits:
+[`docs/preregistration-memory-trustworthiness-2026-11.md`](docs/preregistration-memory-trustworthiness-2026-11.md).
 
 ## Implementation
 
