@@ -19,27 +19,27 @@ claim, and no graph-retrieval claim.
 
 ## Dataset
 
-| Field | Value |
-|---|---|
-| File | `datasets/generated/trust-seed-0/stream.jsonl` |
-| sha256 | `2fc8d6c2ba4e9cff4979945653264ddcc79cec1e86e7038c8a0feccf7f5693e2` |
-| Generator | `cognoscenti --generate-stream <path> --seed 0` |
+| Field            | Value                                                                                        |
+| ---------------- | -------------------------------------------------------------------------------------------- |
+| File             | `datasets/generated/trust-seed-0/stream.jsonl`                                               |
+| sha256           | `2fc8d6c2ba4e9cff4979945653264ddcc79cec1e86e7038c8a0feccf7f5693e2`                           |
+| Generator        | `cognoscenti --generate-stream <path> --seed 0`                                              |
 | Generator commit | `91023ff` (the file was first generated at `39a4223`; `91023ff` regenerates identical bytes) |
-| Size | 3002 events, 860 questions |
-| Public copy | `achiral-ai/cognoscenti` on Hugging Face, `generated/trust-seed-0/stream.jsonl`, same sha256 |
+| Size             | 3002 events, 860 questions                                                                   |
+| Public copy      | `achiral-ai/cognoscenti` on Hugging Face, `generated/trust-seed-0/stream.jsonl`, same sha256 |
 
 Questions by category (the question id encodes the category):
 
-| Category | n | What it tests |
-|---|---|---|
-| `scope` | 300 | A private note, then a different asker. Any returned private memory is a leak. |
-| `owner` | 70 | The asker owns the private note and asks for it back (authorized counterpart of `scope`). |
-| `individual` | 70 | One actor and their own scope (35 user, 35 agent). |
-| `agent` | 70 | Agent-to-agent handoff over org scope, with a private scratchpad behind it. |
-| `supersede` | 70 | A fact changed two to four times; gold is the last event. |
-| `retrieve` | 70 | One fact among same-project distractors and a decoy project. |
-| `paraphrase` / `rephrase` | 70 pairs | The same question in two wordings. |
-| `stable` | 70 | A fact that never changes, under 4 to 20 later updates to other facts. |
+| Category                  | n        | What it tests                                                                             |
+| ------------------------- | -------- | ----------------------------------------------------------------------------------------- |
+| `scope`                   | 300      | A private note, then a different asker. Any returned private memory is a leak.            |
+| `owner`                   | 70       | The asker owns the private note and asks for it back (authorized counterpart of `scope`). |
+| `individual`              | 70       | One actor and their own scope (35 user, 35 agent).                                        |
+| `agent`                   | 70       | Agent-to-agent handoff over org scope, with a private scratchpad behind it.               |
+| `supersede`               | 70       | A fact changed two to four times; gold is the last event.                                 |
+| `retrieve`                | 70       | One fact among same-project distractors and a decoy project.                              |
+| `paraphrase` / `rephrase` | 70 pairs | The same question in two wordings.                                                        |
+| `stable`                  | 70       | A fact that never changes, under 4 to 20 later updates to other facts.                    |
 
 Hand-made regression datasets (`datasets/`, unchanged) are replayed separately and
 reported separately. They are never pooled with the generated stream.
@@ -52,19 +52,19 @@ As of `achiral.ai` `feat/benchmarks` (2026-11-16), every per-member route
 adapter stops the run on an ingest failure. So the first Achiral run covers only
 questions whose events Achiral can store:
 
-| Included | n |
-|---|---|
+| Included                                                                     | n   |
+| ---------------------------------------------------------------------------- | --- |
 | `supersede`, `retrieve`, `paraphrase`, `rephrase`, `stable` (org scope only) | 350 |
-| `scope` where the private note is agent-scoped (asker is a user) | 71 |
-| `individual` with an agent actor | 35 |
-| `owner` where the private note is agent-scoped | 18 |
-| `agent` (see the open question below) | 70 |
+| `scope` where the private note is agent-scoped (asker is a user)             | 71  |
+| `individual` with an agent actor                                             | 35  |
+| `owner` where the private note is agent-scoped                               | 18  |
+| `agent` (see the open question below)                                        | 70  |
 
-| Excluded, not testable through the API | n |
-|---|---|
+| Excluded, not testable through the API  | n   |
+| --------------------------------------- | --- |
 | `scope` with a user-scoped private note | 229 |
-| `owner` with a user-scoped private note | 52 |
-| `individual` with a user actor | 35 |
+| `owner` with a user-scoped private note | 52  |
+| `individual` with a user actor          | 35  |
 
 The excluded trials are reported as "not run: user scope unavailable (Plan 41)". They
 are never counted as passed, never counted as zero leaks, and never dropped from the
@@ -78,10 +78,10 @@ the API's design and is reported as such, not as a retrieval failure.
 
 ## Systems and cohorts
 
-| Cohort | Orgs | `activationNoiseScale` | Mode | Label |
-|---|---|---|---|---|
-| s = 0 | at least 5, one org per replicate | 0 | `rerank` | `--label activationNoiseScale=0` |
-| noise 0.2 | at least 5, separate orgs | 0.2 | `rerank` | `--label activationNoiseScale=0.2` |
+| Cohort    | Orgs                              | `activationNoiseScale` | Mode     | Label                              |
+| --------- | --------------------------------- | ---------------------- | -------- | ---------------------------------- |
+| s = 0     | at least 5, one org per replicate | 0                      | `rerank` | `--label activationNoiseScale=0`   |
+| noise 0.2 | at least 5, separate orgs         | 0.2                    | `rerank` | `--label activationNoiseScale=0.2` |
 
 - The two cohorts use the same streams, are run as separate processes, are labelled in
   every table, and are never merged. A row is either "s = 0" or "noise 0.2".
@@ -95,16 +95,16 @@ the API's design and is reported as such, not as a retrieval failure.
 
 ## Parameters
 
-| Parameter | Value |
-|---|---|
-| `--top-k` | 3 |
-| `--replicates` | 5 per cohort (one org each) |
-| `--seed` | 0 (bootstrap resampling and anything else Cognoscenti randomises) |
-| Bootstrap | 95% percentile interval, 2000 resamples, the question as the unit |
-| Zero-event results | Reported as the 3/n upper bound, never as 0% |
-| Cycle checkpoints | 10 and 100 (`--cycles`), on one org per cohort. 1000 only if ingestion cost allows. |
-| Token count | Whitespace-word approximation (`src/tokens.rs`), read path only |
-| Paired tests | Exact McNemar, library only (no CLI flag), applied to baseline-versus-Achiral on the same questions and reported with the discordant counts |
+| Parameter          | Value                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--top-k`          | 3                                                                                                                                           |
+| `--replicates`     | 5 per cohort (one org each)                                                                                                                 |
+| `--seed`           | 0 (bootstrap resampling and anything else Cognoscenti randomises)                                                                           |
+| Bootstrap          | 95% percentile interval, 2000 resamples, the question as the unit                                                                           |
+| Zero-event results | Reported as the 3/n upper bound, never as 0%                                                                                                |
+| Cycle checkpoints  | 10 and 100 (`--cycles`), on one org per cohort. 1000 only if ingestion cost allows.                                                         |
+| Token count        | Whitespace-word approximation (`src/tokens.rs`), read path only                                                                             |
+| Paired tests       | Exact McNemar, library only (no CLI flag), applied to baseline-versus-Achiral on the same questions and reported with the discordant counts |
 
 A hit means recall@k above 0. For single-gold questions that is the same as recall 1.
 
@@ -123,8 +123,8 @@ There is no pooled headline.
     `rephrase` pairs, and the share of pairs where only one wording found the answer;
   - unchanged-fact accuracy for histories of up to 8 later updates versus more than 8
     (`stable`).
-  At s = 0 the pipeline is deterministic, so flip rate there is expected to be zero and
-  says nothing about noise. The noise 0.2 cohort is where it can move.
+    At s = 0 the pipeline is deterministic, so flip rate there is expected to be zero and
+    says nothing about noise. The noise 0.2 cohort is where it can move.
 - **Scope:** trials with a leak out of n, per leak-bearing category (`scope`, `agent`),
   with the 3/n bound when there is none; recall on `owner` as the check that refusing
   everything does not score well.
@@ -223,12 +223,12 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    about 25 projects, only the pair unique), and each kind of note has several wordings, with
    events using a slot's name or its alias at random.
 
-   | Field | Value |
-   |---|---|
-   | File | `datasets/generated/trust-seed-0-natural-names/stream.jsonl` |
-   | sha256 | `b3e7ba723ddf28a62a9a36613f80f617b2c8bcb9578baeb8c9243be14c72881c` |
-   | Generator | `cognoscenti --generate-stream <path> --seed 0 --generate-profile natural-names` |
-   | Size | 2984 events, 860 questions (same category counts as the registered dataset) |
+   | Field                    | Value                                                                                                                                                                         |
+   | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | File                     | `datasets/generated/trust-seed-0-natural-names/stream.jsonl`                                                                                                                  |
+   | sha256                   | `b3e7ba723ddf28a62a9a36613f80f617b2c8bcb9578baeb8c9243be14c72881c`                                                                                                            |
+   | Generator                | `cognoscenti --generate-stream <path> --seed 0 --generate-profile natural-names`                                                                                              |
+   | Size                     | 2984 events, 860 questions (same category counts as the registered dataset)                                                                                                   |
    | With `--skip-user-scope` | 543 questions kept, 317 trials dropped (`scope` 232, `owner` 55, `individual` 30). The random draws differ from the registered dataset, so the split differs by one question. |
 
    The variant is a separate dataset with its own rows. It is never pooled with the registered
@@ -236,6 +236,7 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    cohort set, announced as its own deviation before it runs. Local baselines were run on the
    variant first: `bm25` recall@3 on the 543 kept questions is 0.694 (0.870 on the registered
    subset), so the gap to a lexical baseline narrows by design.
+
 9. **Retry on transient failures, a per-replicate log and `--resume`, 2026-11-17.** Both
    cohorts died on 2026-11-17 (s0 at 19:10Z "connection refused", s02 at 19:17Z HTTP 502)
    because the dev API containers were recreated; the replay panicked on the first failed
@@ -251,12 +252,12 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
    started. Replicates from the crashed runs are discarded, not merged.
 
 10. **HTML report from machine-readable results, 2026-11-18.** The replay output was text only,
-   so a replay can now write `--results-json` and `cognoscenti report` draws it. The report
-   states the per-question counts and 95% CIs the printed report states, from the same
-   `stats.rs` calls and seed, and adds no metric, dataset or scoring rule. A category of fewer
-   than 10 questions is shown as "n too small" without an interval. The runs already finished
-   before this change (the crashed cohorts) printed text only and have no results file; the
-   report reads files written from now on.
+    so a replay can now write `--results-json` and `cognoscenti report` draws it. The report
+    states the per-question counts and 95% CIs the printed report states, from the same
+    `stats.rs` calls and seed, and adds no metric, dataset or scoring rule. A category of fewer
+    than 10 questions is shown as "n too small" without an interval. The runs already finished
+    before this change (the crashed cohorts) printed text only and have no results file; the
+    report reads files written from now on.
 
 11. **Second start of the registered cohorts, 2026-11-18, and the natural-names cohorts
     announced.** Both registered cohorts (`activationNoiseScale=0` and `activationNoiseScale=0.2`,
@@ -309,7 +310,7 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
 15. **Third start interrupted at replicate 1; resumed, 2026-11-19.** Replicate 0 finished in both
     registered cohorts (2026-11-19T01:43:21Z, 1 h 49 min; recall@3 0.559 at `s = 0`, 0.544 at
     `s = 0.2`). Both processes stopped at about 02:22:55Z during replicate 1 (`settle(): ... not
-    confirmed written within 120000ms` after HTTP 502 retries). Cause: at 02:17:31Z the operator
+confirmed written within 120000ms` after HTTP 502 retries). Cause: at 02:17:31Z the operator
     edited achiral.ai source in the checkout the dev API runs from; the API restarts on source
     changes (`node --watch`) and was down for about 40 s with writes in flight, and a heavy test run
     shared the machine. Replicate 1's orgs (`ct3-s0-2`, `ct3-s02-2`) hold partial data and are
@@ -347,7 +348,7 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
 18. **Natural-names cohorts interrupted at replicate 4; resumed, 2026-11-19.** Replicates 0 to 3
     finished in both natural-names cohorts (09:37Z start, 2 s settle, ~1 h 18 min each). Both
     processes stopped at about 14:34Z on the first writes of replicate 4 (`settle(): ... not
-    confirmed written within 120000ms`). Cause: host overload. A concurrent cargo test and mutation
+confirmed written within 120000ms`). Cause: host overload. A concurrent cargo test and mutation
     run on the same machine drove the load average to about 150 on 12 cores; MongoDB and Weaviate
     timed out (Weaviate 30 s request timeouts, MongoDB connection loss) while the API stayed up.
     The replicate-4 orgs (`ct4-s0-5`, `ct4-s02-5`) hold partial data and are discarded (outputs
@@ -412,3 +413,12 @@ Recorded 2026-11-17, before the first cohort run. Each is a change from the text
     (adds `e9a6eb65`, the Plan 44 productions behind a flag that is off, and the reinforce fix), and
     the params header is sent. It is reported beside the registered cohorts (0.559 at `s = 0`),
     never pooled with them, and does not replace them. No achiral.ai source is edited while it runs.
+24. **Interleave-only control on the registered stream, announced 2026-11-23 before it runs.** One
+    labelled cohort, `registered interleave`, identical to deviation 23 (registered dataset, 544 kept
+    questions, `--skip-user-scope`, top-k 3, seed 0, 5 replicates, 15 s settle, 10 min confirm budget,
+    Cognoscenti `3a76bf1`, achiral.ai `15db2d24`, fresh orgs `ct10-ilreg-1` to `-5` with `rerank`, noise 0
+    and the four memory agents) except that no params header is sent. Its purpose is attribution: deviation
+    23 changed the adapter, the build and the header together (recall 0.7353 against 0.5581 for the
+    registered cohort), so this cohort separates the interleave and build from `activationRangeWeight`.
+    Reported beside deviations 23 and the registered cohorts, never pooled. No achiral.ai source is edited
+    while it runs.
