@@ -24,6 +24,19 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if std::env::args().nth(1).as_deref() == Some("procedural") {
+        let args = cognoscenti::procedural_cli::ProceduralArgs::parse_from(
+            std::env::args().skip(1).enumerate().map(|(i, a)| {
+                if i == 0 {
+                    "cognoscenti procedural".to_string()
+                } else {
+                    a
+                }
+            }),
+        );
+        return cognoscenti::procedural_cli::run(&args);
+    }
+
     if std::env::args().nth(1).as_deref() == Some("rebuild-results") {
         let args = cognoscenti::rebuild::RebuildArgs::parse_from(
             std::env::args().skip(1).enumerate().map(|(i, a)| {
