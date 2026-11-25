@@ -1,0 +1,528 @@
+{
+  "schema": "cognoscenti-procedural/1",
+  "arms": [
+    {
+      "arm": "bm25",
+      "seeds": [
+        4242,
+        4243
+      ],
+      "replicates": 5,
+      "rates": {
+        "follow": {
+          "tally": {
+            "hits": 120,
+            "n": 120
+          },
+          "ci": [
+            1.0,
+            1.0
+          ]
+        },
+        "leak": {
+          "tally": {
+            "hits": 8,
+            "n": 8
+          },
+          "ci": null
+        },
+        "near": {
+          "tally": {
+            "hits": 18,
+            "n": 80
+          },
+          "ci": [
+            0.1375,
+            0.325
+          ]
+        },
+        "sup": {
+          "tally": {
+            "hits": 5,
+            "n": 8
+          },
+          "ci": null
+        }
+      },
+      "per_replicate": {
+        "follow": [
+          {
+            "hits": 120,
+            "n": 120
+          },
+          {
+            "hits": 120,
+            "n": 120
+          },
+          {
+            "hits": 120,
+            "n": 120
+          },
+          {
+            "hits": 120,
+            "n": 120
+          },
+          {
+            "hits": 120,
+            "n": 120
+          }
+        ],
+        "leak": [
+          {
+            "hits": 8,
+            "n": 8
+          },
+          {
+            "hits": 8,
+            "n": 8
+          },
+          {
+            "hits": 8,
+            "n": 8
+          },
+          {
+            "hits": 8,
+            "n": 8
+          },
+          {
+            "hits": 8,
+            "n": 8
+          }
+        ],
+        "near": [
+          {
+            "hits": 18,
+            "n": 80
+          },
+          {
+            "hits": 18,
+            "n": 80
+          },
+          {
+            "hits": 18,
+            "n": 80
+          },
+          {
+            "hits": 18,
+            "n": 80
+          },
+          {
+            "hits": 18,
+            "n": 80
+          }
+        ],
+        "sup": [
+          {
+            "hits": 5,
+            "n": 8
+          },
+          {
+            "hits": 5,
+            "n": 8
+          },
+          {
+            "hits": 5,
+            "n": 8
+          },
+          {
+            "hits": 5,
+            "n": 8
+          },
+          {
+            "hits": 5,
+            "n": 8
+          }
+        ]
+      },
+      "leaks_all": {
+        "hits": 40,
+        "n": 40
+      },
+      "tokens_per_question": 23.75462962962963,
+      "flip_rate": {
+        "tally": {
+          "hits": 0,
+          "n": 216
+        },
+        "ci": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "arm": "declarative",
+      "seeds": [
+        4242,
+        4243
+      ],
+      "replicates": 5,
+      "rates": {
+        "follow": {
+          "tally": {
+            "hits": 111,
+            "n": 120
+          },
+          "ci": [
+            0.875,
+            0.9666666666666667
+          ]
+        },
+        "leak": {
+          "tally": {
+            "hits": 0,
+            "n": 8
+          },
+          "ci": null
+        },
+        "near": {
+          "tally": {
+            "hits": 14,
+            "n": 80
+          },
+          "ci": [
+            0.1,
+            0.2625
+          ]
+        },
+        "sup": {
+          "tally": {
+            "hits": 0,
+            "n": 8
+          },
+          "ci": null
+        }
+      },
+      "per_replicate": {
+        "follow": [
+          {
+            "hits": 111,
+            "n": 120
+          },
+          {
+            "hits": 111,
+            "n": 120
+          },
+          {
+            "hits": 111,
+            "n": 120
+          },
+          {
+            "hits": 111,
+            "n": 120
+          },
+          {
+            "hits": 111,
+            "n": 120
+          }
+        ],
+        "leak": [
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          }
+        ],
+        "near": [
+          {
+            "hits": 14,
+            "n": 80
+          },
+          {
+            "hits": 14,
+            "n": 80
+          },
+          {
+            "hits": 14,
+            "n": 80
+          },
+          {
+            "hits": 14,
+            "n": 80
+          },
+          {
+            "hits": 14,
+            "n": 80
+          }
+        ],
+        "sup": [
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          }
+        ]
+      },
+      "leaks_all": {
+        "hits": 0,
+        "n": 40
+      },
+      "tokens_per_question": 23.89814814814815,
+      "flip_rate": {
+        "tally": {
+          "hits": 0,
+          "n": 216
+        },
+        "ci": [
+          0.0,
+          0.0
+        ]
+      }
+    },
+    {
+      "arm": "procedural",
+      "seeds": [
+        4242,
+        4243
+      ],
+      "replicates": 5,
+      "rates": {
+        "follow": {
+          "tally": {
+            "hits": 95,
+            "n": 120
+          },
+          "ci": [
+            0.7166666666666667,
+            0.8583333333333333
+          ]
+        },
+        "leak": {
+          "tally": {
+            "hits": 0,
+            "n": 8
+          },
+          "ci": null
+        },
+        "near": {
+          "tally": {
+            "hits": 20,
+            "n": 80
+          },
+          "ci": [
+            0.15,
+            0.35
+          ]
+        },
+        "sup": {
+          "tally": {
+            "hits": 0,
+            "n": 8
+          },
+          "ci": null
+        }
+      },
+      "per_replicate": {
+        "follow": [
+          {
+            "hits": 95,
+            "n": 120
+          },
+          {
+            "hits": 77,
+            "n": 120
+          },
+          {
+            "hits": 94,
+            "n": 120
+          },
+          {
+            "hits": 89,
+            "n": 120
+          },
+          {
+            "hits": 69,
+            "n": 120
+          }
+        ],
+        "leak": [
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          }
+        ],
+        "near": [
+          {
+            "hits": 20,
+            "n": 80
+          },
+          {
+            "hits": 19,
+            "n": 80
+          },
+          {
+            "hits": 19,
+            "n": 80
+          },
+          {
+            "hits": 14,
+            "n": 80
+          },
+          {
+            "hits": 20,
+            "n": 80
+          }
+        ],
+        "sup": [
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          },
+          {
+            "hits": 0,
+            "n": 8
+          }
+        ]
+      },
+      "leaks_all": {
+        "hits": 0,
+        "n": 40
+      },
+      "tokens_per_question": 22.90277777777778,
+      "flip_rate": {
+        "tally": {
+          "hits": 111,
+          "n": 216
+        },
+        "ci": [
+          0.44907407407407407,
+          0.5787037037037037
+        ]
+      }
+    }
+  ],
+  "paired": [
+    {
+      "category": "follow",
+      "n": 120,
+      "difference": -0.13333333333333333,
+      "ci": [
+        -0.225,
+        -0.05
+      ],
+      "mcnemar_p": 0.00522287935018541,
+      "only_procedural": 7,
+      "only_declarative": 23
+    },
+    {
+      "category": "near",
+      "n": 80,
+      "difference": 0.075,
+      "ci": [
+        -0.05,
+        0.2
+      ],
+      "mcnemar_p": null,
+      "only_procedural": 16,
+      "only_declarative": 10
+    },
+    {
+      "category": "sup",
+      "n": 8,
+      "difference": 0.0,
+      "ci": [
+        0.0,
+        0.0
+      ],
+      "mcnemar_p": null,
+      "only_procedural": 0,
+      "only_declarative": 0
+    },
+    {
+      "category": "leak",
+      "n": 8,
+      "difference": 0.0,
+      "ci": [
+        0.0,
+        0.0
+      ],
+      "mcnemar_p": null,
+      "only_procedural": 0,
+      "only_declarative": 0
+    }
+  ],
+  "verdict": {
+    "conditions": [
+      {
+        "name": "1. Adherence above declarative",
+        "holds": false,
+        "detail": "difference -0.133, 95% CI -0.225 to -0.050, exact McNemar p 0.0052, n=120 pairs"
+      },
+      {
+        "name": "2. Near-miss firing within +0.10",
+        "holds": false,
+        "detail": "difference +0.075, upper end +0.200, n=80 pairs; not shown to hold"
+      },
+      {
+        "name": "3. Superseded-rule rate not entirely above zero",
+        "holds": true,
+        "detail": "difference +0.000, 95% CI +0.000 to +0.000, n=8 pairs"
+      },
+      {
+        "name": "4. Zero scope leaks",
+        "holds": true,
+        "detail": "0 leak(s) in 40 trials over every replicate and seed"
+      }
+    ],
+    "claim": false,
+    "harms": []
+  }
+}
