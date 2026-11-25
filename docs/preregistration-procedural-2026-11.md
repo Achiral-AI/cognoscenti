@@ -133,3 +133,42 @@ and what is written here is a deviation.
   production's evidence events as `sources` and its rendered condition and action as `text`, so
   tokens per question for the two arms will be comparable once it exists. This changes no rule
   above.
+- 2026-11-25, before any report-seed run: the runner and the productions adapter now exist
+  (commit `25cd2af`, `src/procedural_cli.rs`, `src/productions_http.rs`). Building them showed what
+  the registered wording cannot do as written. Each point below is a deviation from "How the
+  `procedural` arm ranks" and the arms table; no threshold, rule, metric or seed above changes.
+  1. **No selection route.** `routes/productions.js` has list, create, read, edit, delete and
+     approve; nothing in the HTTP surface calls `selectProductions`. The adapter lists what the
+     asker may see and applies the same threshold (0.5, inclusive), maximum (3), noise scale
+     (0.15) and `mulberry32` seeded draw (seed = replicate index) itself. It is a port of
+     `Production.js`, checked against values from the server's own function; a change to that file
+     after the commit recorded in the result note is not picked up.
+  2. **Match strength is cue overlap only.** The server's strength averages cue overlap with a
+     vector similarity of the condition text; no route returns the similarity, so it is absent.
+     A rule passes at half its cues present in the question.
+  3. **A question's cues are taken by the authoring rule**: lowercased words over three letters,
+     split on anything that is not a letter or digit ("annual-plan" is "annual" and "plan"). The
+     pre-registration did not say how. "raises" is a cue of every procedure, so every question
+     phrased "raises" shares one cue with every rule; the registered Limits already expect a high
+     near-miss rate.
+  4. **Authentication is a NextAuth session cookie per user**, not an API key. The runner needs an
+     admin session and one member session per stream user (`ana`, `ben`, `chi`, `dev`) for each
+     replicate's organisation, supplied out of band and never written to a run file.
+  5. **Evidence is an opaque reference.** The server does not resolve it, and the cited event is
+     not written when the production is created (ingest is asynchronous). The adapter stores the
+     stream event id as `{collection: "CognoscentiEvent", weaviateId: <event id>}` and reads it
+     back from the listing; nothing on the server validates it.
+  6. **Tokens differ by design.** A selected production's tokens are its rendered condition and
+     action; the declarative results still count their events' full content. Not in the rule.
+  7. **Noise at the registered scale lowers top-1 adherence.** A rule that shares the qualifier
+     and "raises" with the right one is 0.25 behind it, and the registered noise at 0.15 swaps
+     them often enough that top-1 adherence is below 100% even with perfect matching. With noise
+     0 in the in-memory test server the adapter follows all 60. This is the registered
+     behaviour, recorded so a low adherence is not read as a defect.
+  8. **Serving.** The system under test is a throwaway achiral.ai container built from the Plan 44
+     wiring branch (`feat/procedural-event-wiring`, off `feat/benchmarks` `6ad36ac9`) on the
+     isolated test network, with its own Mongo database and the test Weaviate
+     (text2vec-transformers, multi-qa-MiniLM-L6-cos-v1), `rerank` mode, noise 0. Twenty fresh
+     organisations are provisioned, one per replicate (5) x seed (2) x arm (2), with
+     `aiConfig.proceduralMemory` off for `declarative` and on for `procedural`. This is not the
+     benchmark deployment used by other tracks, and its numbers are not comparable with theirs.
