@@ -172,3 +172,21 @@ and what is written here is a deviation.
      organisations are provisioned, one per replicate (5) x seed (2) x arm (2), with
      `aiConfig.proceduralMemory` off for `declarative` and on for `procedural`. This is not the
      benchmark deployment used by other tracks, and its numbers are not comparable with theirs.
+- 2026-11-25, still before any report-seed run, found when the adapter first met a real server
+  (one smoke replicate on tuning seed 17, `procedural` arm, own throwaway org; it changed no design
+  choice):
+  9. **Writes need a CSRF double submit.** `POST /api/productions` answers 403 `CSRF_INVALID` unless
+     a `csrf-token` cookie equals an `x-csrf-token` header. The in-memory test server did not
+     check this. The adapter now sends a fixed value in both (`25cd2af` plus the follow-up commit).
+  10. **Members' private events are not written to the memory half.** achiral.ai's public memory
+      API accepts a member's private memory only with a credential bound to that one member
+      (Plan 41 compliance scope, reason, expiry). The adapter holds one key per organisation, so
+      user-scope events are left out of the declarative half of both arms (`SkipMemberScope`); the
+      four members' private productions are still authored through their own sessions. Scope leaks
+      are therefore measured on productions only, and the `declarative` arm's leak count is
+      vacuous (nothing private was written to it). The registered leak condition 4 applies to the
+      `procedural` arm as before.
+  11. **Settle.** The 2 s blind settle is kept, but the server writes memories on a 10 s cycle, so
+      the adapter also polls the event-status route for up to `COGNOSCENTI_ACHIRAL_CONFIRM_MS`
+      (set to 180 s) until every ingested event is `written` before a question is asked. With
+      the 2 s wait alone a run stops with "events not confirmed written".

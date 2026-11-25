@@ -241,6 +241,10 @@ pub trait ProductionsApi {
     fn create(&mut self, session: &str, body: &Value) -> Result<()>;
 }
 
+/// The server's CSRF check on a write compares a cookie with a header and does
+/// not issue the value, so any fixed string passes; a session cookie alone is a 403.
+const CSRF_TOKEN: &str = "cognoscenti-procedural";
+
 /// The real transport: curl against `{base}/api/productions`.
 pub struct CurlProductionsApi {
     base_url: String,
@@ -268,7 +272,11 @@ impl CurlProductionsApi {
         let mut cmd = Command::new("curl");
         cmd.args(["-sS", "-X", method, "-H", "Content-Type: application/json"])
             .arg("-H")
-            .arg(format!("Cookie: {}={session}", self.cookie_name))
+            .arg(format!(
+                "Cookie: {}={session}; csrf-token={CSRF_TOKEN}",
+                self.cookie_name
+            ))
+            .args(["-H", &format!("x-csrf-token: {CSRF_TOKEN}")])
             .args(["-w", "\n%{http_code}"]);
         if let Some(body) = body {
             cmd.arg("-d").arg(body.to_string());
@@ -414,7 +422,9 @@ impl ProductionsHttpSystem {
         let sessions = Sessions::for_replicate(&file, index)?;
         let api = CurlProductionsApi::new(&base, &sessions.organization_id);
         Self::new(
-            Box::new(AchiralHttpSystem::from_env_at(index)?),
+            Box::new(SkipMemberScope::new(Box::new(
+                AchiralHttpSystem::from_env_at(index)?,
+            ))),
             Box::new(api),
             sessions,
             index as u32,
@@ -502,6 +512,82 @@ impl MemorySystem for ProductionsHttpSystem {
                 .collect();
         items.extend(self.inner.retrieve_items(query, actor, now, top_k));
         items
+    }
+
+    fn retrieval_echo(&self) -> Option<Value> {
+        self.inner.retrieval_echo()
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        self.inner.capabilities()
+    }
+
+    fn settle(&mut self, now: DateTime<Utc>) {
+        self.inner.settle(now);
+    }
+
+    fn use_feedback(&mut self, memory_ids: &[String], helpful: bool) {
+        self.inner.use_feedback(memory_ids, helpful);
+    }
+}
+
+/// Passes everything to the memory system except events scoped to a member.
+/// achiral.ai's public memory API writes a member's private memory only with
+/// a credential bound to that one member (Plan 41), and the adapter holds one
+/// key per organisation, so a run against the public API leaves those events
+/// out of the declarative half. Productions for them are still authored.
+pub struct SkipMemberScope {
+    inner: Box<dyn MemorySystem>,
+    pub skipped: usize,
+}
+
+impl SkipMemberScope {
+    pub fn new(inner: Box<dyn MemorySystem>) -> Self {
+        Self { inner, skipped: 0 }
+    }
+}
+
+impl MemorySystem for SkipMemberScope {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn ingest(&mut self, event: &StreamEvent) {
+        if event.scope.kind == ScopeKind::User {
+            self.skipped += 1;
+        } else {
+            self.inner.ingest(event);
+        }
+    }
+
+    fn retrieve(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<String> {
+        self.inner.retrieve(query, actor, now, top_k)
+    }
+
+    fn retrieve_scored(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<(String, f64)> {
+        self.inner.retrieve_scored(query, actor, now, top_k)
+    }
+
+    fn retrieve_items(
+        &mut self,
+        query: &str,
+        actor: &Actor,
+        now: DateTime<Utc>,
+        top_k: usize,
+    ) -> Vec<RetrievedItem> {
+        self.inner.retrieve_items(query, actor, now, top_k)
     }
 
     fn retrieval_echo(&self) -> Option<Value> {
@@ -1019,6 +1105,41 @@ pub(crate) mod tests {
         assert!(seen[1].starts_with("POST /api/productions "));
         assert!(seen[1].contains("next-auth.session-token=tok-admin"));
         assert!(seen[1].contains("\"scope\":\"org\""));
+        // The server's CSRF check is a double submit: the cookie and the header must match.
+        assert!(seen[1].contains("csrf-token=cognoscenti-procedural"));
+        assert!(seen[1]
+            .to_ascii_lowercase()
+            .contains("x-csrf-token: cognoscenti-procedural"));
+    }
+
+    #[test]
+    fn member_scope_events_are_left_out_of_the_memory_half_only() {
+        let mut system = SkipMemberScope::new(Box::new(Bm25System::new()));
+        let public = event(
+            "pub-1",
+            "Procedure: refund escalations go to legal.",
+            ScopeKind::Org,
+            "ana",
+        );
+        let private = event(
+            "priv-1",
+            "Procedure: my own refund escalations go to legal.",
+            ScopeKind::User,
+            "ben",
+        );
+        system.ingest(&public);
+        system.ingest(&private);
+        let found = system.retrieve(
+            "refund escalations legal",
+            &Actor {
+                id: "chi".to_string(),
+                kind: ActorKind::User,
+            },
+            Utc::now(),
+            5,
+        );
+        assert_eq!(found, vec!["pub-1".to_string()]);
+        assert_eq!(system.skipped, 1);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use crate::baselines::build_baseline;
 use crate::manifest::{current_commit, sha256_file};
 use crate::procedural::{generate_procedural, ProceduralConfig, ProceduralStream};
 use crate::procedural_report::{rows_of, write_report, ProceduralRun, SCHEMA};
-use crate::productions_http::ProductionsHttpSystem;
+use crate::productions_http::{ProductionsHttpSystem, SkipMemberScope};
 use crate::stream::Stream;
 use crate::AchiralHttpSystem;
 use anyhow::{bail, Context, Result};
@@ -146,7 +146,9 @@ pub fn load_track(path: &Path) -> Result<(ProceduralStream, u64)> {
 
 fn build_arm(arm: &str, replicate: usize) -> Result<Box<dyn MemorySystem>> {
     match arm {
-        "declarative" => Ok(Box::new(AchiralHttpSystem::from_env_at(replicate)?)),
+        "declarative" => Ok(Box::new(SkipMemberScope::new(Box::new(
+            AchiralHttpSystem::from_env_at(replicate)?,
+        )))),
         "procedural" => Ok(Box::new(ProductionsHttpSystem::from_env_at(replicate)?)),
         "bm25" => build_baseline("bm25", 30.0, 20),
         other => bail!("--arm must be one of {}, got {other}", ARMS.join(", ")),
