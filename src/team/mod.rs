@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 pub use generate::{generate_team, items_from_jsonl, items_to_jsonl, to_jsonl, TeamConfig};
 pub use review::{apply_review, export_review_csv, import_review, ReviewSummary};
-pub use score::{score_team, team_lines, team_stats, Tally, TeamScores};
+pub use score::{score_team, team_lines, team_precision, team_stats, Tally, TeamScores};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]

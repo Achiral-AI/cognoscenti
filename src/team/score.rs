@@ -21,7 +21,7 @@ use crate::adapter::QuestionResult;
 use crate::results::{NamedStat, Stat};
 use crate::scoring::is_authorized;
 use crate::stream::{Stream, StreamEvent, StreamQuestion};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A count out of a total.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -171,17 +171,49 @@ pub fn team_stats(scores: &TeamScores, seed: u64) -> Vec<NamedStat> {
         .collect()
 }
 
+/// Mean of per-question precision at the configured cutoff, with a bootstrap
+/// over questions. Empty result lists contribute zero; absent questions follow
+/// the same exclusion rule as the scenario metrics.
+pub fn team_precision(
+    items: &[TeamItem],
+    results: &[QuestionResult],
+    k: usize,
+    seed: u64,
+) -> Option<NamedStat> {
+    if k == 0 {
+        return None;
+    }
+    let by_id: HashMap<_, _> = results.iter().map(|r| (&r.question_id, r)).collect();
+    let values: Vec<f64> = items
+        .iter()
+        .filter_map(|item| {
+            let row = by_id.get(&item.question_id)?;
+            let hits: HashSet<_> = row
+                .retrieved_ids
+                .iter()
+                .take(k)
+                .filter(|id| item.gold_evidence.contains(id))
+                .collect();
+            Some(hits.len() as f64 / k as f64)
+        })
+        .collect();
+    (!values.is_empty()).then(|| NamedStat {
+        name: format!("precision@{k}"),
+        stat: Stat::from_values(&values, seed),
+    })
+}
+
 /// The printed form of `team_stats`, one line per metric.
 pub fn team_lines(stats: &[NamedStat]) -> Vec<String> {
     stats
         .iter()
         .map(|t| {
+            let Some(events) = t.stat.events else {
+                return format!("  team {}: {:.4} (n={})", t.name, t.stat.estimate, t.stat.n);
+            };
             format!(
                 "  team {}: {}/{} = {:.2}",
-                t.name,
-                t.stat.events.unwrap_or(0),
-                t.stat.n,
-                t.stat.estimate
+                t.name, events, t.stat.n, t.stat.estimate
             )
         })
         .collect()
@@ -202,6 +234,32 @@ mod tests {
             scored_candidates: vec![],
             gap_disclosure: None,
         }
+    }
+
+    #[test]
+    fn precision_uses_distinct_gold_in_first_k_slots_and_averages_over_scored_items() {
+        let b = batch();
+        let lineage = b
+            .items
+            .iter()
+            .find(|i| i.scenario == Scenario::Lineage)
+            .unwrap();
+        let gold = &lineage.gold_evidence;
+        let items = vec![lineage.clone(), b.items[0].clone(), b.items[1].clone()];
+        let results = [
+            result(
+                &lineage.question_id,
+                vec![gold[0].clone(), gold[0].clone(), gold[1].clone()],
+            ),
+            result(&items[1].question_id, vec![]),
+        ];
+        let row = team_precision(&items, &results, 2, 0).unwrap();
+        assert_eq!(row.name, "precision@2");
+        assert_eq!(row.stat.n, 2);
+        assert_eq!(row.stat.estimate, 0.25);
+        assert!(team_lines(&[row])[0].contains("0.25"));
+        assert!(team_precision(&items, &results, 0, 0).is_none());
+        assert!(team_precision(&items, &[], 2, 0).is_none());
     }
 
     fn batch() -> TeamBatch {

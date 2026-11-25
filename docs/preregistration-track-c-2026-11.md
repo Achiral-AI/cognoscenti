@@ -52,6 +52,8 @@ held-out seed that is never committed, generated at `--size full` and held by wh
 held-out split (open question 5). Bootstrap seed 0. A generator change after the first report-seed run is
 a registered deviation and the runs are redone.
 
+Precision@k is a descriptive retrieval metric. Count distinct gold evidence IDs in the first k returned positions and divide by k, including when fewer than k are returned. Report the mean across scored questions and bootstrap over those questions. An empty response scores zero. A skipped question is excluded from n. The registered decision rule remains a draft.
+
 ## Arms
 
 Same stream, a fresh org per replicate, 5 replicates, top-k 5 (open question 4), org and user

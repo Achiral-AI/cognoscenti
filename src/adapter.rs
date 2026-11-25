@@ -943,10 +943,17 @@ pub fn run_baseline_replay(config: &BenchmarkConfig) -> Result<()> {
         }
 
         let team = team_items.as_deref().map_or_else(Vec::new, |items| {
-            crate::team::team_stats(
+            let mut stats = crate::team::team_stats(
                 &crate::team::score_team(items, &stream, &results),
                 config.seed,
-            )
+            );
+            stats.extend(crate::team::team_precision(
+                items,
+                &results,
+                config.top_k,
+                config.seed,
+            ));
+            stats
         });
         for line in crate::team::team_lines(&team) {
             println!("{line}");
