@@ -384,6 +384,10 @@ pub struct ProductionsHttpSystem {
     api: Box<dyn ProductionsApi>,
     sessions: Sessions,
     seed: u32,
+    /// What each session last listed. Nothing else writes to the organisation
+    /// during a replay, so a listing holds until this arm authors a rule; asking
+    /// per question runs into the server's request limit.
+    listed: HashMap<String, Vec<ListedProduction>>,
     /// `NOISE_SCALE`; tests set it to 0 to see the matching alone.
     pub noise_scale: f64,
 }
@@ -404,6 +408,7 @@ impl ProductionsHttpSystem {
             api,
             sessions,
             seed,
+            listed: HashMap::new(),
             noise_scale: NOISE_SCALE,
         })
     }
@@ -445,6 +450,7 @@ impl ProductionsHttpSystem {
         self.api.create(&session, &body).unwrap_or_else(|err| {
             panic!("creating the production for {} failed: {err:#}", event.id)
         });
+        self.listed.clear();
     }
 }
 
@@ -496,12 +502,15 @@ impl MemorySystem for ProductionsHttpSystem {
             .of(&actor.id)
             .unwrap_or_else(|err| panic!("{err:#}"))
             .to_string();
-        let listed = self
-            .api
-            .list(&session)
-            .unwrap_or_else(|err| panic!("listing productions for {} failed: {err:#}", actor.id));
+        if !self.listed.contains_key(&session) {
+            let rules = self.api.list(&session).unwrap_or_else(|err| {
+                panic!("listing productions for {} failed: {err:#}", actor.id)
+            });
+            self.listed.insert(session.clone(), rules);
+        }
+        let listed = &self.listed[&session];
         let mut items: Vec<RetrievedItem> =
-            select(&listed, query, self.seed, self.noise_scale, MAX_SELECTED)
+            select(listed, query, self.seed, self.noise_scale, MAX_SELECTED)
                 .into_iter()
                 .map(|(p, strength)| RetrievedItem {
                     // A production with no evidence retrieves nothing.
@@ -961,6 +970,31 @@ pub(crate) mod tests {
             // at top-1, so adherence is below the noiseless ceiling.
             assert!(scores.adherence.hits <= 60);
         }
+    }
+
+    #[test]
+    fn rules_are_listed_once_per_asker_until_one_is_authored() {
+        let server = Rc::new(RefCell::new(ServerState::default()));
+        let mut arm = system(Box::new(Bm25System::new()), &server);
+        let asker = Actor {
+            id: "ben".to_string(),
+            kind: ActorKind::User,
+        };
+        for _ in 0..3 {
+            arm.retrieve_items("A trial user raises a refund.", &asker, Utc::now(), 1);
+        }
+        let listed = |s: &Rc<RefCell<ServerState>>| {
+            s.borrow().calls.iter().filter(|c| *c == "list:ben").count()
+        };
+        assert_eq!(listed(&server), 1);
+        arm.ingest(&event(
+            "proc-new",
+            "Procedure: when a trial user raises a refund, notify legal before replying.",
+            ScopeKind::Org,
+            "ana",
+        ));
+        arm.retrieve_items("A trial user raises a refund.", &asker, Utc::now(), 1);
+        assert_eq!(listed(&server), 2);
     }
 
     #[test]

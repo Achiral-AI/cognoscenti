@@ -190,3 +190,11 @@ and what is written here is a deviation.
       the adapter also polls the event-status route for up to `COGNOSCENTI_ACHIRAL_CONFIRM_MS`
       (set to 180 s) until every ingested event is `written` before a question is asked. With
       the 2 s wait alone a run stops with "events not confirmed written".
+- 2026-11-25, after the `declarative` report-seed runs and before any `procedural` result: the
+  first `procedural` attempt on both report seeds stopped in replicate 0 with HTTP 429 from the
+  server's per-IP limit (1000 requests per 15 minutes in development; the adapter listed rules for
+  every question, two seeds at once). No question was scored. Those ten organisations are
+  discarded and ten fresh ones used.
+  12. **Listings are cached.** The adapter lists a session's rules once and again only after it
+      authors a rule, instead of before every question. Nothing else writes to the organisation
+      during a replay, so the selection inputs are the same.
