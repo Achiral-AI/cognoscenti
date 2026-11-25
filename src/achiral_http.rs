@@ -92,6 +92,24 @@ pub struct AchiralHttpSystem {
     /// `COGNOSCENTI_ACHIRAL_USER_MAP_FILE` isn't set, which is fine for any
     /// dataset with no `ScopeKind::User` event.
     user_member_ids: HashMap<String, String>,
+    /// This replicate's actor-name -> member-bound compliance key. Member-scoped
+    /// ingest needs a credential bound to that one member
+    /// (`middleware/complianceMemoryAccess.js`); the org key is refused with 403.
+    /// Empty when `COGNOSCENTI_ACHIRAL_USER_KEYS_FILE` isn't set.
+    user_keys: HashMap<String, String>,
+}
+
+/// The key to send for an ingest in this scope: a user-scope event needs the
+/// compliance key bound to its member, every other scope uses the org key.
+fn ingest_key_for<'a>(
+    scope: &Scope,
+    org_key: Option<&'a str>,
+    user_keys: &'a HashMap<String, String>,
+) -> Option<&'a str> {
+    match scope.kind {
+        ScopeKind::User => user_keys.get(&scope.id).map(String::as_str).or(org_key),
+        ScopeKind::Org | ScopeKind::Agent => org_key,
+    }
 }
 
 /// Picks the API key for one replicate - a pure function over the two
@@ -381,6 +399,15 @@ impl AchiralHttpSystem {
             })
             .transpose()?;
         let user_member_ids = resolve_user_map_for_replicate(user_map_contents.as_deref(), index)?;
+        let user_keys_contents = std::env::var("COGNOSCENTI_ACHIRAL_USER_KEYS_FILE")
+            .ok()
+            .map(|path| {
+                std::fs::read_to_string(&path).with_context(|| {
+                    format!("reading COGNOSCENTI_ACHIRAL_USER_KEYS_FILE at {path}")
+                })
+            })
+            .transpose()?;
+        let user_keys = resolve_user_map_for_replicate(user_keys_contents.as_deref(), index)?;
         Ok(Self {
             base_url,
             api_key,
@@ -398,6 +425,7 @@ impl AchiralHttpSystem {
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids,
+            user_keys,
         })
     }
 }
@@ -1075,7 +1103,7 @@ impl MemorySystem for AchiralHttpSystem {
         let response = run_json_post(
             &self.retry,
             &url,
-            self.api_key.as_deref(),
+            ingest_key_for(&event.scope, self.api_key.as_deref(), &self.user_keys),
             &ingest_headers(event),
             &payload,
         )
@@ -1753,6 +1781,27 @@ mod tests {
     }
 
     #[test]
+    fn a_user_scope_ingest_uses_the_members_compliance_key_and_other_scopes_the_org_key() {
+        let keys = HashMap::from([("mo".to_string(), "member-key".to_string())]);
+        let scope = |kind, id: &str| Scope {
+            kind,
+            id: id.to_string(),
+        };
+        assert_eq!(
+            ingest_key_for(&scope(ScopeKind::User, "mo"), Some("org-key"), &keys),
+            Some("member-key")
+        );
+        assert_eq!(
+            ingest_key_for(&scope(ScopeKind::Org, "acme"), Some("org-key"), &keys),
+            Some("org-key")
+        );
+        assert_eq!(
+            ingest_key_for(&scope(ScopeKind::User, "unmapped"), Some("org-key"), &keys),
+            Some("org-key")
+        );
+    }
+
+    #[test]
     fn settle_waits_at_least_settle_ms_for_the_write_cycle_to_catch_up() {
         let mut system = AchiralHttpSystem {
             base_url: "http://unused".to_string(),
@@ -1767,6 +1816,7 @@ mod tests {
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
+            user_keys: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
 
@@ -1791,6 +1841,7 @@ mod tests {
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
+            user_keys: HashMap::new(),
         };
         let now: DateTime<Utc> = "2026-01-01T00:00:00Z".parse().unwrap();
 
@@ -1815,6 +1866,7 @@ mod tests {
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
+            user_keys: HashMap::new(),
         };
         assert!(system.capabilities().settle);
     }
