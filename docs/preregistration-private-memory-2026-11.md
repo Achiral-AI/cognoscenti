@@ -106,7 +106,13 @@ sha256, stream hash, keys file name (never its contents), start and end times.
 
 ## Deviations
 
-None yet.
+1. 2026-11-25. First P2 attempt (organizations `pm-p2-1` to `pm-p2-5`, started 18:02:04Z)
+   aborted at 18:31:56Z in replicate 0: `settle()` reported 5 events not confirmed
+   written within 600000 ms, exit 101. No P2 result was produced and none was read.
+   Cause not established. The container was unchanged (`RestartCount` 0). P2 was
+   rerun from scratch on five fresh organizations (`pm-p2b-1` to `pm-p2b-5`, started
+   22:49:03Z) on the same container, with the same settings. Only the rerun is
+   reported. If it fails the same way, that is reported as a P2 failure.
 
 ## Result: arm P0 (control), 2026-11-25
 
@@ -135,3 +141,43 @@ Currency is the largest drop (1.00 to 0.93), which fits `keywordCandidates` havi
 been chosen after seeing seed 0. On this stream the five-replicate bm25 baseline is
 0.67, so the gap to the best local baseline is about 0.18, against 0.25 on seed 0.
 P2 has not finished; H1 to H3 are not evaluated.
+
+## Result: arm P2 (treatment), 2026-11-26
+
+Run 2026-11-25 22:49:03Z to 2026-11-26 09:53:01Z (attempt 2; see Deviation 1).
+Same serving commit `6ad36ac9`, same container (`StartedAt` 2026-11-25T10:17:24.935669218Z,
+`RestartCount` 0 at launch and at end), same binary and stream as P0. Organizations
+`pm-p2b-1` to `pm-p2b-5`, keys file `keys-p2b`. Settings: `AGENT_WRITE_TIME=1`,
+`ORG_ROUTE_FIRST=1`. The harness exited 0.
+
+Sleep: `pmset -g log` shows the host in system sleep (lid closed, on battery) from
+2026-11-26 01:20:47Z to 01:31:15Z and from 01:39:13Z to 04:04:21Z, about 2 h 35 min
+in all, inside replicate 1. The harness survived and no settle timeout fired, so
+the run took 11 h 4 min of wall time, about 8 h 30 min awake. The sleep did not
+change the stream or the serving container. A Mongo election on the host at about
+04:49Z (reported by another session) fell inside replicate 1 as well and caused no
+failure here.
+
+| Component | n | P0 | P2 | Paired P2 − P0 (95% interval) |
+| --- | --- | --- | --- | --- |
+| Memory Trustworthiness | | 0.85 (0.82 to 0.87) | 0.91 (0.89 to 0.93) | |
+| Access | 138 | 1.00 | 1.00 | 0 |
+| Currency | 70 | 0.93 | 1.00 | +0.07 (+0.01 to +0.14) |
+| Recall | 280 | 0.90 | 0.89 | −0.01 (−0.03 to 0.00) |
+| Private memory | 114 | 0.56 (0.47 to 0.65) | 0.75 (0.68 to 0.83) | +0.19 (+0.11 to +0.28) |
+
+Mean recall@3 by replicate: 0.8872, 0.8891, 0.8891, 0.8910, 0.8910. No leak in any
+replicate in either arm: scope 0/68 and agent 0/70 events, 3/n bound 4.4% and 4.3%.
+
+- **H1 met.** Private memory rose by 0.19, above the 0.05 threshold, with an
+  interval above 0.
+- **H2 holds.** No leaks in P0 or P2.
+- **H3 holds.** Recall fell by 0.01 and Currency rose; neither fell more than 0.02.
+
+Decision rule: report P2 as the first held-out Memory Trustworthiness number for the
+fixed system (0.91, 0.89 to 0.93) and run P1 for attribution. P1 has not been run.
+
+Limits: held-out means unseen questions from the same generator; one seed family;
+user-scope trials not run; the P2 result pairs two arms that differ in two opt-ins,
+so P1 is needed before crediting either one. Two opt-ins that are off by default
+produced this score; the shipped default is P0 (0.85).
