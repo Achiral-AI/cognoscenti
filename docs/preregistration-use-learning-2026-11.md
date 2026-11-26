@@ -111,3 +111,12 @@ the automatic reinforcement of `recall`.
   the decision rule itself are unchanged. The `--top-k 3` in the arms paragraph is superseded by
   this entry. Seed 17 top-1 for the two local baselines, seen before this entry: bm25 pop 0.817,
   change 0.500; usecount pop 1.000, change 0.500.
+- 2026-11-26, before the first report-seed arm: the report stream was generated once from the
+  committed generator (binary built from commit `f926f1e`, generator unchanged since the
+  2026-11-21 entries): `--generate-use-learning ... --seed 4242`, lint clean, 585 questions,
+  sha256 `81fd8328b841266d4b9acefeb7119feec454c286dd0b0dc8dd91a87d75b1e7ab`. Arms run one after
+  another against one frozen container (`bench-api-ta`, achiral.ai `c81b4881`, started
+  2026-11-25T20:34Z with `HEADLESS_AGENT_ALLOW_ORG_WIDE_TOKENS=true`, which these arms do not use).
+  Stated limit: the explicit reinforce route does not increment `qualifiedUses` or
+  `qualifiedTrials`. This does not affect any registered arm, because `utilityWeight` defaults to 0
+  (`services/memory/RetrievalParams.js`) and no arm sets it, so U_i never enters ranking.
