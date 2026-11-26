@@ -75,11 +75,11 @@ pub struct AchiralHttpSystem {
     /// Whether `use_feedback` sends reinforce calls
     /// (`COGNOSCENTI_ACHIRAL_USE_FEEDBACK=1`).
     use_feedback: bool,
-    /// Whether agent-scope writes carry event time and supersession
-    /// (`COGNOSCENTI_ACHIRAL_AGENT_WRITE_TIME=1`).
+    /// Whether agent-scope writes carry event time and supersession (on;
+    /// `COGNOSCENTI_ACHIRAL_AGENT_WRITE_TIME=0` turns it off).
     agent_write_time: bool,
-    /// Whether an agent asker's org route comes first when interleaving
-    /// (`COGNOSCENTI_ACHIRAL_ORG_ROUTE_FIRST=1`).
+    /// Whether an agent asker's org route comes first when interleaving (on;
+    /// `COGNOSCENTI_ACHIRAL_ORG_ROUTE_FIRST=0` turns it off).
     org_route_first: bool,
     /// Event id -> the server's id for the agent note written for it.
     agent_memory_ids: HashMap<String, String>,
@@ -403,12 +403,12 @@ impl AchiralHttpSystem {
                     .ok()
                     .as_deref(),
             ),
-            agent_write_time: use_feedback_enabled(
+            agent_write_time: default_on_enabled(
                 std::env::var("COGNOSCENTI_ACHIRAL_AGENT_WRITE_TIME")
                     .ok()
                     .as_deref(),
             ),
-            org_route_first: use_feedback_enabled(
+            org_route_first: default_on_enabled(
                 std::env::var("COGNOSCENTI_ACHIRAL_ORG_ROUTE_FIRST")
                     .ok()
                     .as_deref(),
@@ -808,6 +808,12 @@ fn reinforce_payload(collection: Option<&str>) -> Value {
 
 fn use_feedback_enabled(value: Option<&str>) -> bool {
     value == Some("1")
+}
+
+/// Agent write time and org-route-first are on unless set to `0`; the held-out
+/// run (Plan 45, arm P2) measured them as the behaviour to ship.
+fn default_on_enabled(value: Option<&str>) -> bool {
+    value != Some("0")
 }
 
 /// Parses the org-scope `recall` response (`serializeMemory`,
@@ -2532,6 +2538,14 @@ mod tests {
             reinforce_payload(None),
             json!({"reason": "cognoscenti: gold memory was used", "actor": "cognoscenti"})
         );
+    }
+
+    #[test]
+    fn write_time_and_route_order_are_on_unless_set_to_0() {
+        assert!(default_on_enabled(None));
+        assert!(default_on_enabled(Some("")));
+        assert!(default_on_enabled(Some("1")));
+        assert!(!default_on_enabled(Some("0")));
     }
 
     #[test]
