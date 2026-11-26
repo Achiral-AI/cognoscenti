@@ -83,6 +83,11 @@ pub struct AchiralHttpSystem {
     org_route_first: bool,
     /// Event id -> the server's id for the agent note written for it.
     agent_memory_ids: HashMap<String, String>,
+    /// Whether an agent's retrieve is one request carrying
+    /// `includeOrganization: true`, the server merging agent and org results
+    /// (`COGNOSCENTI_ACHIRAL_INCLUDE_ORGANIZATION=1`), instead of two
+    /// requests interleaved here.
+    include_organization: bool,
     /// Event id -> the server's memory id, from the recall items seen so
     /// far; `reinforce` is addressed by the server id.
     server_ids: HashMap<String, ServerMemory>,
@@ -414,6 +419,11 @@ impl AchiralHttpSystem {
                     .as_deref(),
             ),
             agent_memory_ids: HashMap::new(),
+            include_organization: include_organization_enabled(
+                std::env::var("COGNOSCENTI_ACHIRAL_INCLUDE_ORGANIZATION")
+                    .ok()
+                    .as_deref(),
+            ),
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids,
@@ -614,6 +624,21 @@ pub fn retrieve_payload(query: &str, top_k: usize) -> Value {
     json!({ "query": query, "limit": top_k })
 }
 
+/// The agent route's body with the opt-in `includeOrganization` flag: the
+/// server runs the organization recall too and merges rank by rank, agent
+/// first. Without it this is `retrieve_payload`.
+pub fn retrieve_payload_with_organization(
+    query: &str,
+    top_k: usize,
+    include_organization: bool,
+) -> Value {
+    let mut payload = retrieve_payload(query, top_k);
+    if include_organization {
+        payload["includeOrganization"] = json!(true);
+    }
+    payload
+}
+
 /// `POST /v1/memory/retrieve`'s body for a Plan 26 Phase 5 evidence-graph
 /// request - the same endpoint, query and `top_k` as `retrieve_payload`,
 /// with one extra opt-in flag achiral.ai only honors under `aggr` mode.
@@ -804,6 +829,10 @@ fn reinforce_payload(collection: Option<&str>) -> Value {
         payload["collection"] = json!(collection);
     }
     payload
+}
+
+fn include_organization_enabled(value: Option<&str>) -> bool {
+    value == Some("1")
 }
 
 fn use_feedback_enabled(value: Option<&str>) -> bool {
@@ -1232,10 +1261,18 @@ impl MemorySystem for AchiralHttpSystem {
         top_k: usize,
     ) -> Vec<(String, f64)> {
         self.feedback_now = now;
-        let payload = retrieve_payload(query, top_k);
         let headers = retrieve_headers(&self.retrieval, now);
+        // Only the agent route accepts the flag; the server merges, so there is
+        // nothing left to interleave.
+        let server_merges = self.include_organization && actor.kind == ActorKind::Agent;
+        let payload = retrieve_payload_with_organization(query, top_k, server_merges);
+        let urls = if server_merges {
+            vec![retrieve_url(&self.base_url, actor)]
+        } else {
+            retrieve_urls_ordered(&self.base_url, actor, self.org_route_first)
+        };
         let mut routes = Vec::new();
-        for url in retrieve_urls_ordered(&self.base_url, actor, self.org_route_first) {
+        for url in urls {
             let response = run_json_post(
                 &self.retry,
                 &url,
@@ -1827,6 +1864,7 @@ mod tests {
             agent_write_time: false,
             org_route_first: false,
             agent_memory_ids: HashMap::new(),
+            include_organization: false,
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
@@ -1854,6 +1892,7 @@ mod tests {
             agent_write_time: false,
             org_route_first: false,
             agent_memory_ids: HashMap::new(),
+            include_organization: false,
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
@@ -1881,6 +1920,7 @@ mod tests {
             agent_write_time: false,
             org_route_first: false,
             agent_memory_ids: HashMap::new(),
+            include_organization: false,
             server_ids: HashMap::new(),
             feedback_now: Utc::now(),
             user_member_ids: HashMap::new(),
@@ -2554,5 +2594,207 @@ mod tests {
         assert!(!use_feedback_enabled(Some("0")));
         assert!(!use_feedback_enabled(Some("")));
         assert!(!use_feedback_enabled(None));
+    }
+
+    // --- includeOrganization switch, against a mock server ---
+
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug, Clone)]
+    struct Seen {
+        path: String,
+        headers: String,
+        body: Value,
+    }
+
+    /// Answers each request with the next canned body, in order, and records
+    /// what it was sent. Binds an ephemeral loopback port, never a real stack.
+    fn mock_server(replies: Vec<Value>) -> (String, Arc<Mutex<Vec<Seen>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for reply in replies {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                let (head, mut body) = loop {
+                    let n = stream.read(&mut buf).unwrap();
+                    raw.extend_from_slice(&buf[..n]);
+                    if let Some(at) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&raw[..at]).into_owned();
+                        break (head, raw[at + 4..].to_vec());
+                    }
+                };
+                let length: usize = head
+                    .lines()
+                    .find_map(|l| {
+                        l.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(|v| v.trim().parse().unwrap())
+                    })
+                    .unwrap_or(0);
+                while body.len() < length {
+                    let n = stream.read(&mut buf).unwrap();
+                    body.extend_from_slice(&buf[..n]);
+                }
+                log.lock().unwrap().push(Seen {
+                    path: head
+                        .lines()
+                        .next()
+                        .unwrap()
+                        .split(' ')
+                        .nth(1)
+                        .unwrap()
+                        .to_string(),
+                    headers: head.clone(),
+                    body: serde_json::from_slice(&body).unwrap(),
+                });
+                let text = reply.to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    text.len(),
+                    text
+                )
+                .unwrap();
+            }
+        });
+        (base, seen)
+    }
+
+    fn system(base_url: &str, include_organization: bool, use_feedback: bool) -> AchiralHttpSystem {
+        AchiralHttpSystem {
+            base_url: base_url.to_string(),
+            api_key: Some("test-key".to_string()),
+            settle_ms: 0,
+            confirm_ms: 0,
+            retry: RetryPolicy::default(),
+            retrieval: RetrievalOverride::from_env_values(None, None).unwrap(),
+            retrieval_echo: None,
+            use_feedback,
+            include_organization,
+            agent_write_time: false,
+            org_route_first: false,
+            agent_memory_ids: HashMap::new(),
+            server_ids: HashMap::new(),
+            feedback_now: Utc::now(),
+            unconfirmed_business_event_ids: Vec::new(),
+            user_member_ids: HashMap::new(),
+        }
+    }
+
+    fn item(server_id: &str, event_id: &str, collection: &str) -> Value {
+        json!({"id": server_id, "score": 0.5, "collection": collection,
+               "metadata": {"cognoscenti_event_id": event_id}})
+    }
+
+    #[test]
+    fn include_organization_is_on_only_for_the_value_1() {
+        assert!(include_organization_enabled(Some("1")));
+        assert!(!include_organization_enabled(Some("true")));
+        assert!(!include_organization_enabled(Some("")));
+        assert!(!include_organization_enabled(None));
+    }
+
+    #[test]
+    fn the_payload_asks_for_the_organization_only_when_told_to() {
+        assert_eq!(
+            retrieve_payload_with_organization("q", 3, true),
+            json!({"query": "q", "limit": 3, "includeOrganization": true})
+        );
+        assert_eq!(
+            retrieve_payload_with_organization("q", 3, false),
+            retrieve_payload("q", 3)
+        );
+    }
+
+    #[test]
+    fn by_default_an_agent_makes_two_requests_and_interleaves_them() {
+        let (base, seen) = mock_server(vec![
+            json!({"data": [item("s1", "a1", "AgentMemory"), item("s2", "a2", "AgentMemory")]}),
+            json!({"data": [item("s3", "o1", "ConversationMemory"), item("s4", "o2", "ConversationMemory")]}),
+        ]);
+        let mut sys = system(&base, false, false);
+        let got = sys.retrieve("q", &agent("ops-agent"), Utc::now(), 3);
+        assert_eq!(got, vec!["a1", "o1", "a2"]);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0].path, "/v1/memory/agents/ops-agent/retrieve");
+        assert_eq!(seen[1].path, "/v1/memory/retrieve");
+        assert!(seen
+            .iter()
+            .all(|s| s.body.get("includeOrganization").is_none()));
+    }
+
+    #[test]
+    fn with_the_switch_an_agent_makes_one_request_and_keeps_the_servers_order() {
+        let (base, seen) = mock_server(vec![json!({"data": [
+            item("s1", "a1", "AgentMemory"),
+            item("s3", "o1", "ConversationMemory"),
+            item("s2", "a2", "AgentMemory"),
+            item("s4", "o2", "ConversationMemory"),
+        ]})]);
+        let mut sys = system(&base, true, false);
+        let got = sys.retrieve("q", &agent("ops-agent"), Utc::now(), 3);
+        assert_eq!(got, vec!["a1", "o1", "a2"]);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].path, "/v1/memory/agents/ops-agent/retrieve");
+        assert_eq!(
+            seen[0].body,
+            json!({"query": "q", "limit": 3, "includeOrganization": true})
+        );
+    }
+
+    #[test]
+    fn with_the_switch_a_user_still_asks_the_org_route_without_the_flag() {
+        let (base, seen) = mock_server(vec![
+            json!({"data": [item("s1", "o1", "ConversationMemory")]}),
+        ]);
+        let mut sys = system(&base, true, false);
+        let user = Actor {
+            id: "bob".to_string(),
+            kind: ActorKind::User,
+        };
+        assert_eq!(sys.retrieve("q", &user, Utc::now(), 3), vec!["o1"]);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].path, "/v1/memory/retrieve");
+        assert!(seen[0].body.get("includeOrganization").is_none());
+    }
+
+    // End to end through the adapter: a recalled ConversationMemory id is the
+    // one the reinforce call is addressed to, with its collection named, on the
+    // recall's simulated clock, in both retrieve modes.
+    #[test]
+    fn use_feedback_reinforces_a_recalled_conversation_memory_with_its_collection() {
+        for include_organization in [false, true] {
+            let recall = json!({"data": [item("srv-9", "o1", "ConversationMemory")]});
+            let replies = if include_organization {
+                vec![recall.clone(), json!({"ok": true})]
+            } else {
+                vec![json!({"data": []}), recall.clone(), json!({"ok": true})]
+            };
+            let (base, seen) = mock_server(replies);
+            let mut sys = system(&base, include_organization, true);
+            let now = DateTime::parse_from_rfc3339("2026-03-01T10:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc);
+            let got = sys.retrieve("q", &agent("ops-agent"), now, 3);
+            assert_eq!(got, vec!["o1"]);
+            sys.use_feedback(&got, true);
+            let seen = seen.lock().unwrap();
+            let last = seen.last().unwrap();
+            assert_eq!(last.path, "/v1/memory/srv-9/reinforce");
+            assert_eq!(last.body["collection"], "ConversationMemory");
+            assert!(last
+                .headers
+                .to_ascii_lowercase()
+                .contains("x-achiral-eval-now: 2026-03-01"));
+        }
     }
 }
