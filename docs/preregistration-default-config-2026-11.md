@@ -97,4 +97,10 @@ sha256, stream hash, keys file name (never its contents), start and end times.
 
 ## Deviations
 
-None yet.
+1. 2026-11-26. First attempt (organizations `dflt-1` to `dflt-5`, started 15:04:59Z)
+   aborted at about 15:57Z with no replicate complete, when the host MongoDB
+   stopped answering at about 15:51Z, the API worker in `bench-api-dflt` exited
+   (code 1) and `settle()` reported 1 event not confirmed written (exit 101). No
+   result was produced or read. The arm ran beside a P1 arm and an A2 run on the
+   same host. It is to be rerun alone on a fresh container and fresh
+   organizations; the rerun is the arm reported.
